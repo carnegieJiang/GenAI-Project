@@ -16,7 +16,7 @@ from tqdm import tqdm
 from torchvision import transforms
 
 from methods.diffusion.diff_model import LatentDiffusionUNet, get_opt
-from dataset.stylebooth_dataset import StyleBoothDataset, image_transform
+from dataset.dataset import make_dataloader
 
 # =========================
 # Utilities
@@ -29,8 +29,8 @@ def set_seed(seed: int) -> None:
 
 
 def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
-    source_images = torch.stack([item["source_image"] for item in batch], dim=0)
-    target_images = torch.stack([item["target_image"] for item in batch], dim=0)
+    source_images = torch.stack([item["image"] for item in batch], dim=0)
+    target_images = torch.stack([item["target"] for item in batch], dim=0)
     prompts = [item["prompt"] for item in batch]
 
     return {
@@ -53,8 +53,7 @@ def save_image_tensor(image_tensor: torch.Tensor, save_path: str) -> None:
 
 @dataclass
 class TrainConfig:
-    data_root: Optional[str] = "/home/ec2-user/GenAI-Project/data/stylebooth_dataset"
-    data_path: Optional[str] = "/home/ec2-user/GenAI-Project/data/stylebooth_dataset/metadata.jsonl"
+    data_path: Optional[str] = "/home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv"
     output_dir: str = "/home/ec2-user/GenAI-Project/model/diffusion_outputs"
     resolution: int = 512
     batch_size: int = 4
@@ -95,19 +94,14 @@ def train(cfg: TrainConfig):
     # use_amp = device.type == "cuda" and cfg.mixed_precision in ["fp16", "bf16"]
     # amp_dtype = get_dtype(cfg.mixed_precision)
 
-    train_dataset = StyleBoothDataset(
-        data_root=cfg.data_root,
+
+    train_loader = make_dataloader(
         metadata_path=cfg.data_path,
-        image_transform=image_transform,
-    )
-    train_loader = DataLoader(
-        train_dataset,
+        image_size=cfg.resolution,
         batch_size=cfg.batch_size,
         shuffle=True,
         num_workers=cfg.num_workers,
-        pin_memory=(device.type == "cuda"),
         collate_fn=collate_fn,
-        drop_last=True,
     )
 
     val_dataset = None
@@ -260,8 +254,7 @@ def save_checkpoint(
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--data_root", type=str, default="/home/ec2-user/GenAI-Project/data/stylebooth_dataset")
-    parser.add_argument("--data_path", type=str, default="/home/ec2-user/GenAI-Project/data/stylebooth_dataset/metadata.jsonl")
+    parser.add_argument("--data_path", type=str, default="/home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv")
     parser.add_argument("--output_dir", type=str, default="/home/ec2-user/GenAI-Project/model/diffusion_outputs")
 
     parser.add_argument("--resolution", type=int, default=512)
