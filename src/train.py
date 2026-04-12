@@ -76,7 +76,7 @@ class TrainConfig:
     save_every_steps: int = 1000
     sample_every_steps: int = 1000
     num_sample_images: int = 4
-    mixed_precision: str = "no"  # "no", "fp16", "bf16"
+    mixed_precision: str = "fp16"  # "no", "fp16", "bf16"
     freeze_vae: bool = True
     freeze_text_encoder: bool = True
 
@@ -90,7 +90,10 @@ def get_dtype(mixed_precision: str):
 
 
 def train(cfg: TrainConfig):
-    wandb.init(project="project_diffusion", config=cfg.__dict__)
+    wandb.init(
+        entity="genAIteam",
+        project="method1_diffusion", 
+        config=cfg.__dict__)
     os.makedirs(cfg.output_dir, exist_ok=True)
     sample_dir = os.path.join(cfg.output_dir, "samples")
     ckpt_dir = os.path.join(cfg.output_dir, "checkpoints")
@@ -123,8 +126,12 @@ def train(cfg: TrainConfig):
     criterion, optimizer, scheduler = get_opt(model, lr=cfg.lr, weight_decay=cfg.weight_decay, scheduler_T_max=-1)
 
     global_step = 0
+    use_amp = device.type == "cuda" and cfg.mixed_precision in ["fp16", "bf16"]
+    amp_dtype = get_dtype(cfg.mixed_precision)
+    scaler = torch.amp.GradScaler(enabled=(use_amp and cfg.mixed_precision == "fp16"))
 
     for epoch in range(cfg.num_epochs):
+
         model.train()
         running_loss = 0.0
 
@@ -141,11 +148,21 @@ def train(cfg: TrainConfig):
             outputs = model(batch["source_images"], batch["target_images"], batch["prompts"])
             loss = criterion(outputs["pred_noise"], outputs["target_noise"]) / cfg.grad_accum_steps
 
-            loss.backward()
+            if scaler.is_enabled():
+                scaler.scale(loss).backward()
+            else:
+                loss.backward()
 
             if (step + 1) % cfg.grad_accum_steps == 0:
                 # torch.nn.utils.clip_grad_norm_(trainable_params, cfg.max_grad_norm)
-                optimizer.step()
+                if scaler.is_enabled():
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
+                    optimizer.step()
                 if scheduler is not None:
                     scheduler.step()
 
@@ -268,9 +285,6 @@ def save_checkpoint(
     print(f"Saved checkpoint to: {path}")
 
 
-# =========================
-# CLI
-# =========================
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -295,7 +309,7 @@ def parse_args():
     parser.add_argument("--sample_every_steps", type=int, default=1000)
     parser.add_argument("--num_sample_images", type=int, default=2)
 
-    parser.add_argument("--mixed_precision", type=str, default="no", choices=["no", "fp16", "bf16"])
+    parser.add_argument("--mixed_precision", type=str, default="fp16", choices=["no", "fp16", "bf16"])
     parser.add_argument("--freeze_vae", action="store_true")
     parser.add_argument("--freeze_text_encoder", action="store_true")
 
