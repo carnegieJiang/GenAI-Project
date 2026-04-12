@@ -1,7 +1,7 @@
 /data 
 /model 
-/wandb
+/src/wandb
 /src/baseline/diffusers
 /src/baseline/instruct-pix2pix
+/src/dataset/__pycache__
 config.yml
-__pycache__
