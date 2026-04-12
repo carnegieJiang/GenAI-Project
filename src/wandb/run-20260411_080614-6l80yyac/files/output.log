@@ -1,0 +1,60 @@
+/home/ec2-user/miniconda3/envs/instructp2p/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████| 196/196 [00:00<00:00, 4460.57it/s]
+[1mCLIPTextModel LOAD REPORT[0m from: openai/clip-vit-large-patch14
+Key                                                            | Status     |  |
+---------------------------------------------------------------+------------+--+-
+vision_model.encoder.layers.{0...23}.self_attn.v_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc2.bias              | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc2.weight            | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.q_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm1.weight        | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.q_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm2.bias          | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc1.bias              | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.k_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm1.bias          | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.k_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc1.weight            | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm2.weight        | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.v_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.out_proj.bias   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.post_layernorm.bias                               | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.patch_embedding.weight                 | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.out_proj.weight | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.class_embedding                        | [38;5;208mUNEXPECTED[0m |  |
+logit_scale                                                    | [38;5;208mUNEXPECTED[0m |  |
+text_model.embeddings.position_ids                             | [38;5;208mUNEXPECTED[0m |  |
+vision_model.pre_layrnorm.bias                                 | [38;5;208mUNEXPECTED[0m |  |
+vision_model.pre_layrnorm.weight                               | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.position_ids                           | [38;5;208mUNEXPECTED[0m |  |
+visual_projection.weight                                       | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.position_embedding.weight              | [38;5;208mUNEXPECTED[0m |  |
+text_projection.weight                                         | [38;5;208mUNEXPECTED[0m |  |
+vision_model.post_layernorm.weight                             | [38;5;208mUNEXPECTED[0m |  |
+
+Notes:
+- [38;5;208mUNEXPECTED:[0m	[3mcan be ignored when loading from different task/architecture; not ok if you expect identical arch.[0m
+Epoch 1/10: 100%|████████████████████████████████████████████████████████████████████| 2832/2832 [1:58:48<00:00,  2.52s/it, loss=0.183815]
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0001000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0002000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/epoch_1.pt
+Epoch 2/10: 100%|████████████████████████████████████████████████████████████████████| 2832/2832 [1:46:01<00:00,  2.25s/it, loss=0.091579]
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0003000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0004000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0005000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/epoch_2.pt
+Epoch 3/10: 100%|████████████████████████████████████████████████████████████████████| 2832/2832 [1:52:18<00:00,  2.38s/it, loss=0.059650]
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0006000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0007000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0008000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/epoch_3.pt
+Epoch 4/10: 100%|████████████████████████████████████████████████████████████████████| 2832/2832 [1:58:22<00:00,  2.51s/it, loss=0.045601]
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0009000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0010000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0011000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/epoch_4.pt
+Epoch 5/10:  77%|████████████████████████████████████████████████████                | 2168/2832 [1:32:47<14:22,  1.30s/it, loss=0.029128]
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0012000.pt
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/step_0013000.pt

@@ -17,6 +17,7 @@ from torchvision import transforms
 
 from methods.diffusion.diff_model import LatentDiffusionUNet, get_opt
 from dataset.dataset import make_dataloader
+import wandb 
 
 # =========================
 # Utilities
@@ -40,16 +41,23 @@ def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def save_image_tensor(image_tensor: torch.Tensor, save_path: str) -> None:
+def tensor2img(image_tensor: torch.Tensor) -> Image.Image:
     """
     image_tensor: [3,H,W] in [-1,1]
     """
     image_tensor = image_tensor.detach().cpu().clamp(-1, 1)
     image_tensor = (image_tensor + 1.0) / 2.0
     image_tensor = transforms.ToPILImage()(image_tensor)
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    image_tensor.save(save_path)
+    return image_tensor
 
+def concat_images_horizontally(img1, img2):
+    w1, h1 = img1.size
+    w2, h2 = img2.size
+
+    new_img = Image.new("RGB", (w1 + w2, max(h1, h2)))
+    new_img.paste(img1, (0, 0))
+    new_img.paste(img2, (w1, 0))
+    return new_img
 
 @dataclass
 class TrainConfig:
@@ -66,7 +74,7 @@ class TrainConfig:
     prompt_dropout_prob: float = 0.1
     seed: int = 42
     save_every_steps: int = 1000
-    sample_every_steps: int = 500
+    sample_every_steps: int = 1000
     num_sample_images: int = 4
     mixed_precision: str = "no"  # "no", "fp16", "bf16"
     freeze_vae: bool = True
@@ -82,6 +90,7 @@ def get_dtype(mixed_precision: str):
 
 
 def train(cfg: TrainConfig):
+    wandb.init(project="project_diffusion", config=cfg.__dict__)
     os.makedirs(cfg.output_dir, exist_ok=True)
     sample_dir = os.path.join(cfg.output_dir, "samples")
     ckpt_dir = os.path.join(cfg.output_dir, "checkpoints")
@@ -95,7 +104,7 @@ def train(cfg: TrainConfig):
     # amp_dtype = get_dtype(cfg.mixed_precision)
 
 
-    train_loader = make_dataloader(
+    train_loader, val_loader = make_dataloader(
         metadata_path=cfg.data_path,
         image_size=cfg.resolution,
         batch_size=cfg.batch_size,
@@ -104,9 +113,6 @@ def train(cfg: TrainConfig):
         collate_fn=collate_fn,
     )
 
-    val_dataset = None
-    val_loader = None
-
 
     model = LatentDiffusionUNet(
         prompt_dropout_prob=cfg.prompt_dropout_prob,
@@ -114,7 +120,7 @@ def train(cfg: TrainConfig):
         freeze_text=cfg.freeze_text_encoder,
     )
     model.to(device)
-    criterion, optimizer, scheduler = get_opt(model, lr=cfg.lr, weight_decay=cfg.weight_decay, scheduler_T_max=cfg.num_epochs * len(train_loader) // cfg.grad_accum_steps)
+    criterion, optimizer, scheduler = get_opt(model, lr=cfg.lr, weight_decay=cfg.weight_decay, scheduler_T_max=-1)
 
     global_step = 0
 
@@ -140,12 +146,15 @@ def train(cfg: TrainConfig):
             if (step + 1) % cfg.grad_accum_steps == 0:
                 # torch.nn.utils.clip_grad_norm_(trainable_params, cfg.max_grad_norm)
                 optimizer.step()
+                if scheduler is not None:
+                    scheduler.step()
 
                 optimizer.zero_grad()
                 global_step += 1
 
                 running_loss += loss.item() * cfg.grad_accum_steps
-                avg_loss = running_loss / max(global_step, 1)
+                avg_loss = running_loss / (step+1)
+                wandb.log({"train_loss": avg_loss}, step=global_step)
                 pbar.set_postfix(loss=f"{avg_loss:.6f}")
 
                 if global_step % cfg.sample_every_steps == 0:
@@ -209,7 +218,7 @@ def run_validation_samples(
     source_images = batch["source_images"][:max_images].to(device)
     prompts = batch["prompts"][:max_images]
 
-    edited = model.edit_image(
+    edited = model.sample(
         source_images=source_images,
         prompts=prompts,
         num_inference_steps=30,
@@ -219,8 +228,20 @@ def run_validation_samples(
 
     for i in range(edited.shape[0]):
         out_path = os.path.join(save_dir, f"step_{global_step:07d}_sample_{i}.png")
-        save_image_tensor(edited[i], out_path)
-
+        edit_img = tensor2img(edited[i])
+        ori_img = tensor2img(source_images[i])
+        combined = concat_images_horizontally(ori_img, edit_img)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        combined.save(out_path)
+        wandb.log(
+            {
+                f"sample_{i}_pair": wandb.Image(
+                    combined,
+                    caption=f"Left: original | Right: edited | Prompt: {prompts[i]}"
+                )
+            },
+            step=global_step,
+        )
     if was_training:
         model.train()
 
@@ -271,8 +292,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
 
     parser.add_argument("--save_every_steps", type=int, default=1000)
-    parser.add_argument("--sample_every_steps", type=int, default=500)
-    parser.add_argument("--num_sample_images", type=int, default=4)
+    parser.add_argument("--sample_every_steps", type=int, default=1000)
+    parser.add_argument("--num_sample_images", type=int, default=2)
 
     parser.add_argument("--mixed_precision", type=str, default="no", choices=["no", "fp16", "bf16"])
     parser.add_argument("--freeze_vae", action="store_true")
@@ -281,9 +302,7 @@ def parse_args():
     args = parser.parse_args()
 
     cfg = TrainConfig(
-        train_jsonl=args.train_jsonl,
-        val_jsonl=args.val_jsonl,
-        image_root=args.image_root,
+        data_path=args.data_path,
         output_dir=args.output_dir,
         resolution=args.resolution,
         batch_size=args.batch_size,

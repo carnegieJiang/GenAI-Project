@@ -1,0 +1,55 @@
+/home/ec2-user/miniconda3/envs/instructp2p/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████| 196/196 [00:00<00:00, 4461.61it/s]
+[1mCLIPTextModel LOAD REPORT[0m from: openai/clip-vit-large-patch14
+Key                                                            | Status     |  |
+---------------------------------------------------------------+------------+--+-
+vision_model.encoder.layers.{0...23}.self_attn.v_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm2.weight        | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.out_proj.bias   | [38;5;208mUNEXPECTED[0m |  |
+logit_scale                                                    | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.q_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.pre_layrnorm.weight                               | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.out_proj.weight | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.k_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm2.bias          | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc2.bias              | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc1.bias              | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.v_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.k_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.q_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+text_model.embeddings.position_ids                             | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm1.weight        | [38;5;208mUNEXPECTED[0m |  |
+visual_projection.weight                                       | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc1.weight            | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc2.weight            | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm1.bias          | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.patch_embedding.weight                 | [38;5;208mUNEXPECTED[0m |  |
+text_projection.weight                                         | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.position_ids                           | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.class_embedding                        | [38;5;208mUNEXPECTED[0m |  |
+vision_model.post_layernorm.weight                             | [38;5;208mUNEXPECTED[0m |  |
+vision_model.post_layernorm.bias                               | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.position_embedding.weight              | [38;5;208mUNEXPECTED[0m |  |
+vision_model.pre_layrnorm.bias                                 | [38;5;208mUNEXPECTED[0m |  |
+
+Notes:
+- [38;5;208mUNEXPECTED:[0m	[3mcan be ignored when loading from different task/architecture; not ok if you expect identical arch.[0m
+Epoch 1/10: 100%|██████████████████████████████████████████████████████████████████████████| 63/63 [01:21<00:00,  1.30s/it, loss=0.222467]
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/epoch_1.pt
+Epoch 2/10: 100%|██████████████████████████████████████████████████████████████████████████| 63/63 [01:21<00:00,  1.29s/it, loss=0.091810]
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/epoch_2.pt
+Epoch 3/10:   0%|                                                                                                  | 0/63 [00:01<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 319, in <module>
+    train(cfg)
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 148, in train
+    running_loss += loss.item() * cfg.grad_accum_steps
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 319, in <module>
+    train(cfg)
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 148, in train
+    running_loss += loss.item() * cfg.grad_accum_steps
+KeyboardInterrupt

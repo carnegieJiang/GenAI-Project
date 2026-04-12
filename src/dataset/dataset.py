@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
 
 
@@ -76,13 +76,22 @@ def make_dataloader(
     batch_size: int = 8,
     shuffle: bool = True,
     num_workers: int = 0,
+    num_imgs: int = 2,
     collate_fn=None,
 ) -> DataLoader:
     dataset = StyleTransferDataset(metadata_path=metadata_path, image_size=image_size)
+    val_indices = list(range(min(num_imgs, len(dataset))))
+    val_dataset = Subset(dataset, val_indices)
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
+        num_workers=num_workers,
+        collate_fn=collate_fn,
+    ), DataLoader(
+        val_dataset,
+        batch_size=num_imgs,
+        shuffle=False,
         num_workers=num_workers,
         collate_fn=collate_fn,
     )

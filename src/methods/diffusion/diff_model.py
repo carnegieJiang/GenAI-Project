@@ -159,8 +159,8 @@ class LatentDiffusionUNet(nn.Module):
         device = source_images.device
         batch_size = source_images.shape[0]
 
-        prompt_embeds = self.encode_prompt(prompts, device)
-        uncond_embeds = self.encode_prompt([""] * batch_size, device)
+        prompt_embeds = self.encode_prompt(prompts).to(device)
+        uncond_embeds = self.encode_prompt([""] * batch_size).to(device)
 
         init_latents = self.encode_image(source_images)
 

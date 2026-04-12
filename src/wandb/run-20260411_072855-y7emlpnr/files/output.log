@@ -1,0 +1,75 @@
+/home/ec2-user/miniconda3/envs/instructp2p/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py:205: UserWarning: The `local_dir_use_symlinks` argument is deprecated and ignored in `hf_hub_download`. Downloading to a local directory does not use symlinks anymore.
+  warnings.warn(
+config.json: 100%|███████████████████████████████████████████████████████████████████████████████████████| 547/547 [00:00<00:00, 1.65MB/s]
+vae/diffusion_pytorch_model.safetensors: 100%|██████████████████████████████████████████████████████████| 335M/335M [00:01<00:00, 232MB/s]
+config.json: 100%|███████████████████████████████████████████████████████████████████████████████████████| 743/743 [00:00<00:00, 1.30MB/s]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+unet/diffusion_pytorch_model.safetensors: 100%|███████████████████████████████████████████████████████| 3.44G/3.44G [00:05<00:00, 635MB/s]
+tokenizer_config.json: 100%|█████████████████████████████████████████████████████████████████████████████| 905/905 [00:00<00:00, 4.42MB/s]
+vocab.json: 961kB [00:00, 114MB/s]
+merges.txt: 525kB [00:00, 137MB/s]
+tokenizer.json: 2.22MB [00:00, 156MB/s]
+special_tokens_map.json: 100%|███████████████████████████████████████████████████████████████████████████| 389/389 [00:00<00:00, 1.97MB/s]
+config.json: 4.52kB [00:00, 10.4MB/s]
+model.safetensors: 100%|██████████████████████████████████████████████████████████████████████████████| 1.71G/1.71G [00:08<00:00, 208MB/s]
+Loading weights: 100%|████████████████████████████████████████████████████████████████████████████████| 196/196 [00:00<00:00, 4554.61it/s]
+[1mCLIPTextModel LOAD REPORT[0m from: openai/clip-vit-large-patch14
+Key                                                            | Status     |  |
+---------------------------------------------------------------+------------+--+-
+vision_model.encoder.layers.{0...23}.mlp.fc2.bias              | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.out_proj.bias   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc1.weight            | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.k_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm1.weight        | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm1.bias          | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.v_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.q_proj.weight   | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm2.weight        | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.layer_norm2.bias          | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc1.bias              | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.q_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.v_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.out_proj.weight | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.mlp.fc2.weight            | [38;5;208mUNEXPECTED[0m |  |
+vision_model.encoder.layers.{0...23}.self_attn.k_proj.bias     | [38;5;208mUNEXPECTED[0m |  |
+text_projection.weight                                         | [38;5;208mUNEXPECTED[0m |  |
+logit_scale                                                    | [38;5;208mUNEXPECTED[0m |  |
+text_model.embeddings.position_ids                             | [38;5;208mUNEXPECTED[0m |  |
+vision_model.post_layernorm.weight                             | [38;5;208mUNEXPECTED[0m |  |
+vision_model.pre_layrnorm.weight                               | [38;5;208mUNEXPECTED[0m |  |
+visual_projection.weight                                       | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.position_ids                           | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.patch_embedding.weight                 | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.class_embedding                        | [38;5;208mUNEXPECTED[0m |  |
+vision_model.post_layernorm.bias                               | [38;5;208mUNEXPECTED[0m |  |
+vision_model.embeddings.position_embedding.weight              | [38;5;208mUNEXPECTED[0m |  |
+vision_model.pre_layrnorm.bias                                 | [38;5;208mUNEXPECTED[0m |  |
+
+Notes:
+- [38;5;208mUNEXPECTED:[0m	[3mcan be ignored when loading from different task/architecture; not ok if you expect identical arch.[0m
+Epoch 1/10: 100%|██████████████████████████████████████████████████████████████████████████| 63/63 [01:23<00:00,  1.33s/it, loss=0.222467]
+Saved checkpoint to: /home/ec2-user/GenAI-Project/model/diffusion_outputs/checkpoints/epoch_1.pt
+Traceback (most recent call last):
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 312, in <module>
+    train(cfg)
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 185, in train
+    run_validation_samples(
+  File "/home/ec2-user/miniconda3/envs/instructp2p/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 216, in run_validation_samples
+    edited = model.edit_image(
+  File "/home/ec2-user/miniconda3/envs/instructp2p/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1968, in __getattr__
+    raise AttributeError(
+AttributeError: 'LatentDiffusionUNet' object has no attribute 'edit_image'
+Traceback (most recent call last):
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 312, in <module>
+    train(cfg)
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 185, in train
+    run_validation_samples(
+  File "/home/ec2-user/miniconda3/envs/instructp2p/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/ec2-user/GenAI-Project/src/train.py", line 216, in run_validation_samples
+    edited = model.edit_image(
+  File "/home/ec2-user/miniconda3/envs/instructp2p/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1968, in __getattr__
+    raise AttributeError(
+AttributeError: 'LatentDiffusionUNet' object has no attribute 'edit_image'

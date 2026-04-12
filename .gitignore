@@ -4,3 +4,4 @@
 /src/baseline/diffusers
 /src/baseline/instruct-pix2pix
 config.yml
+__pycache__
