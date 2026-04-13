@@ -218,6 +218,7 @@ class LatentDiffusionUNet(nn.Module):
     #     edited = self.decode_latent(latents)
     #     return edited
 
+    @torch.no_grad()
     def sample(self, source_images, prompts, strength=0.6, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
         device = source_images.device
         batch_size = source_images.shape[0]

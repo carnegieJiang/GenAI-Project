@@ -4,21 +4,22 @@ import random
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler
 
 import torch
 from diffusers import StableDiffusionInstructPix2PixPipeline
 from PIL import Image, ImageDraw
 from metrics.grader import Grader
-from methods.diffusion import LatentDiffusionUNet
+from methods.diffusion.diff_model import LatentDiffusionUNet
 from torchvision import transforms
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run baseline InstructPix2Pix results on StyleBooth samples.")
-    parser.add_argument("--model-id", default="baseline", choices=["baseline", "diffusion", "flow", "decouple"], help="Identifier for the model/method being evaluated.")
-    parser.add_argument("--model-dir", default="/home/ec2-user/GenAI-Project/model/instructp2p")
+    parser.add_argument("--model-id", default="diffusion", choices=["baseline", "diffusion", "flow", "decouple"], help="Identifier for the model/method being evaluated.")
+    parser.add_argument("--model-dir", default="/home/ec2-user/GenAI-Project/model/diffusion_outputs/final_unet")
     parser.add_argument("--metadata-path", default="/home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv")
-    parser.add_argument("--output-dir", default="/home/ec2-user/GenAI-Project/results/baseline")
+    parser.add_argument("--output-dir", default="/home/ec2-user/GenAI-Project/results/diffusion")
     parser.add_argument("--num-samples", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resolution", type=int, default=512)
@@ -91,7 +92,7 @@ def main() -> None:
         pipe.set_progress_bar_config(disable=True)
     elif args.model_id == "diffusion":
         pipe = LatentDiffusionUNet(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True) 
-        pipe.load_state_dict(torch.load(Path(args.model_dir), map_location="cpu"))
+        pipe.unet = UNet2DConditionModel.from_pretrained(args.model_dir)
         pipe = pipe.to(device)
         pipe.eval()
 
@@ -118,26 +119,28 @@ def main() -> None:
                 guidance_scale=args.guidance_scale,
                 image_guidance_scale=args.image_guidance_scale,
             ).images[0]
+            output = transforms.ToTensor()(output).unsqueeze(0).to(device)
         elif args.model_id == "diffusion":
             output = pipe.sample(
                 source_images=source,
                 prompts=prompt,
                 num_inference_steps=args.steps,
                 text_guidance_scale=args.guidance_scale,
-            )[0]
+            )
+            output = output.detach().cpu().clamp(-1, 1)
+            output = (output + 1.0) / 2.0
         elapsed = time.perf_counter() - start_time
+        report = grader.evaluate(source, output, target, prompt)
+        source = transforms.ToPILImage()(source.squeeze(0).cpu())
+        target = transforms.ToPILImage()(target.squeeze(0).cpu())
+        if isinstance(output, torch.Tensor):
+            output = transforms.ToPILImage()(output.squeeze(0).cpu())
 
         sample_id = row.get("id") or f"sample_{index:03d}"
         output_path = outputs_dir / f"{index:03d}_{sample_id}.png"
         grid_path = grids_dir / f"{index:03d}_{sample_id}_grid.png"
         output.save(output_path)
         make_grid(source, output, target, prompt).save(grid_path)
-        report = grader.evaluate(
-            source=source,
-            output=output,
-            target=target,
-            prompt=prompt,
-        )
 
 
         results.append(
@@ -162,8 +165,10 @@ def main() -> None:
     write_results(results, output_dir / "baseline_results.csv")
 
     times = [float(row["seconds"]) for row in results]
-    prompt_scores = [float(row["clip_prompt_alignment"]) for row in results if row["clip_prompt_alignment"]]
-    content_scores = [float(row["clip_source_output_similarity"]) for row in results if row["clip_source_output_similarity"]]
+    prompt_scores = [float(row["clip_text_similarity"]) for row in results if row["clip_text_similarity"]]
+    content_scores = [float(row["clip_style_similarity"]) for row in results if row["clip_style_similarity"]]
+    dino_scores = [float(row["dino_content_preservation"]) for row in results if row["dino_content_preservation"]]
+    lpips_scores = [float(row["lpips_content_preservation"]) for row in results if row["lpips_content_preservation"]]
 
     summary = [
         {
@@ -172,6 +177,8 @@ def main() -> None:
             "avg_seconds_per_image": f"{sum(times) / len(times):.3f}",
             "avg_clip_prompt_alignment": "" if not prompt_scores else f"{sum(prompt_scores) / len(prompt_scores):.4f}",
             "avg_clip_source_output_similarity": "" if not content_scores else f"{sum(content_scores) / len(content_scores):.4f}",
+            "avg_dino_content_preservation": "" if not dino_scores else f"{sum(dino_scores) / len(dino_scores):.4f}",
+            "avg_lpips_content_preservation": "" if not lpips_scores else f"{sum(lpips_scores) / len(lpips_scores):.4f}",
             "model_dir": args.model_dir,
         }
     ]
