@@ -1,0 +1,2 @@
+method,num_samples,avg_seconds_per_image,avg_clip_prompt_alignment,avg_clip_source_output_similarity,model_dir
+InstructPix2Pix baseline,8,2.329,26.2144,0.7842,/home/ec2-user/GenAI-Project/model/instructp2p
