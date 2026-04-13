@@ -76,6 +76,8 @@ class TrainConfig:
     mixed_precision: str = "fp16"  # "no", "fp16", "bf16"
     freeze_vae: bool = True
     freeze_text_encoder: bool = True
+    text_guidance_scale: float = 7.5
+    reconstruction_guidance_scale: float = 0.0
 
 
 def get_dtype(mixed_precision: str):
@@ -237,7 +239,7 @@ def run_validation_samples(
         prompts=prompts,
         num_inference_steps=30,
         strength=0.6,
-        guidance_scale=7.5,
+        text_guidance_scale=7.5,
     )
 
     for i in range(edited.shape[0]):
@@ -303,12 +305,15 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
 
     parser.add_argument("--save_every_steps", type=int, default=1000)
-    parser.add_argument("--sample_every_steps", type=int, default=1000)
+    parser.add_argument("--sample_every_steps", type=int, default=50)
     parser.add_argument("--num_sample_images", type=int, default=2)
 
     parser.add_argument("--mixed_precision", type=str, default="fp16", choices=["no", "fp16", "bf16"])
     parser.add_argument("--freeze_vae", action="store_true")
     parser.add_argument("--freeze_text_encoder", action="store_true")
+
+    parser.add_argument("--text_guidance_scale", type=float, default=7.5)
+    parser.add_argument("--reconstruction_guidance_scale", type=float, default=0.0)
 
     args = parser.parse_args()
 
@@ -331,6 +336,8 @@ def parse_args():
         mixed_precision=args.mixed_precision,
         freeze_vae=args.freeze_vae,
         freeze_text_encoder=args.freeze_text_encoder,
+        text_guidance_scale=args.text_guidance_scale,
+        reconstruction_guidance_scale=args.reconstruction_guidance_scale,
     )
     return cfg
 

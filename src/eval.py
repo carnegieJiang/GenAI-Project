@@ -9,6 +9,8 @@ import torch
 from diffusers import StableDiffusionInstructPix2PixPipeline
 from PIL import Image, ImageDraw
 from metrics.grader import Grader
+from methods.diffusion import LatentDiffusionUNet
+from torchvision import transforms
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,7 +25,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=30)
     parser.add_argument("--guidance-scale", type=float, default=7.5)
     parser.add_argument("--image-guidance-scale", type=float, default=1.5)
-    parser.add_argument("--skip-clip", action="store_true")
     return parser.parse_args()
 
 
@@ -89,7 +90,10 @@ def main() -> None:
         pipe = pipe.to(device)
         pipe.set_progress_bar_config(disable=True)
     elif args.model_id == "diffusion":
-        pass # TODO: add diffusion baseline
+        pipe = LatentDiffusionUNet(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True) 
+        pipe.load_state_dict(torch.load(Path(args.model_dir), map_location="cpu"))
+        pipe = pipe.to(device)
+        pipe.eval()
 
     grader = Grader()
     rows = pick_samples(read_metadata(metadata_path), args.num_samples, args.seed)
@@ -102,15 +106,25 @@ def main() -> None:
 
         source = load_image(source_path, args.resolution)
         target = load_image(target_path, args.resolution)
+        source = transforms.ToTensor()(source).unsqueeze(0).to(device)
+        target = transforms.ToTensor()(target).unsqueeze(0).to(device)
 
         start_time = time.perf_counter()
-        output = pipe(
-            prompt=prompt,
-            image=source,
-            num_inference_steps=args.steps,
-            guidance_scale=args.guidance_scale,
-            image_guidance_scale=args.image_guidance_scale,
-        ).images[0]
+        if args.model_id == "baseline":
+            output = pipe(
+                prompt=prompt,
+                image=source,
+                num_inference_steps=args.steps,
+                guidance_scale=args.guidance_scale,
+                image_guidance_scale=args.image_guidance_scale,
+            ).images[0]
+        elif args.model_id == "diffusion":
+            output = pipe.sample(
+                source_images=source,
+                prompts=prompt,
+                num_inference_steps=args.steps,
+                text_guidance_scale=args.guidance_scale,
+            )[0]
         elapsed = time.perf_counter() - start_time
 
         sample_id = row.get("id") or f"sample_{index:03d}"
@@ -118,6 +132,12 @@ def main() -> None:
         grid_path = grids_dir / f"{index:03d}_{sample_id}_grid.png"
         output.save(output_path)
         make_grid(source, output, target, prompt).save(grid_path)
+        report = grader.evaluate(
+            source=source,
+            output=output,
+            target=target,
+            prompt=prompt,
+        )
 
 
         results.append(
@@ -126,8 +146,10 @@ def main() -> None:
                 "style_label": row.get("style_label", ""),
                 "prompt": prompt,
                 "seconds": f"{elapsed:.3f}",
-                "clip_prompt_alignment": "" if prompt_alignment is None else f"{prompt_alignment:.4f}",
-                "clip_source_output_similarity": "" if content_similarity is None else f"{content_similarity:.4f}",
+                "clip_text_similarity": report["clip_text_similarity"].item(),
+                "clip_style_similarity": report["clip_style_similarity"].item(),
+                "dino_content_preservation": report["dino_content_preservation"].item(),
+                "lpips_content_preservation": report["lpips_content_preservation"].item(),
                 "source_image_path": str(source_path),
                 "target_image_path": str(target_path),
                 "output_image_path": str(output_path),

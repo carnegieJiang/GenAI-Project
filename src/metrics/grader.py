@@ -8,8 +8,9 @@ import lpips
 
 
 class Grader:
-    def __init__(self):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, skip_fid=True):
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu")
 
         self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device).eval()
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
@@ -25,6 +26,7 @@ class Grader:
 
         self.dino_mean = torch.tensor([0.485, 0.456, 0.406], device=self.device).view(1, 3, 1, 1)
         self.dino_std = torch.tensor([0.229, 0.224, 0.225], device=self.device).view(1, 3, 1, 1)
+        self.skip_fid = skip_fid
 
     def _to_float_01(self, images: torch.Tensor) -> torch.Tensor:
         """
@@ -132,21 +134,17 @@ class Grader:
         results["clip_text_similarity"] = self.clip_image_text_similarity(output_images, prompts)
         results["dino_content_preservation"] = self.dino_similarity(source_images, output_images)
         results["lpips_content_preservation"] = self.lpips_distance(source_images, output_images)
-        results["fid"] = self.compute_fid(target_images, output_images)
+        if not self.skip_fid:
+            results["fid"] = self.compute_fid(target_images, output_images)
         return results
 
 
 if __name__ == "__main__":
     grader = Grader()
-    sample_source = torch.rand(4, 3, 512, 512)
-    sample_target = torch.rand(4, 3, 512, 512)
-    sample_output = torch.rand(4, 3, 512, 512)
-    sample_prompts = [
-        "A photo of a cat",
-        "A photo of a dog",
-        "A photo of a car",
-        "A photo of a tree",
-    ]
+    sample_source = torch.rand(1, 3, 512, 512)
+    sample_target = torch.rand(1, 3, 512, 512)
+    sample_output = torch.rand(1, 3, 512, 512)
+    sample_prompts = ["A photo of a cat"]
     results = grader.evaluate(sample_source, sample_output, sample_target, sample_prompts)
     for k, v in results.items():
         print(k, v)
