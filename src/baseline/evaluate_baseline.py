@@ -92,7 +92,14 @@ def clip_scores(
     prompt_alignment = text_image_outputs.logits_per_image[0, 0].item()
 
     image_inputs = clip_processor(images=[source, output], return_tensors="pt").to(device)
-    image_features = clip_model.get_image_features(**image_inputs)
+    image_features = clip_model.get_image_features(pixel_values=image_inputs["pixel_values"])
+    if not isinstance(image_features, torch.Tensor):
+        if hasattr(image_features, "image_embeds"):
+            image_features = image_features.image_embeds
+        elif hasattr(image_features, "pooler_output"):
+            image_features = image_features.pooler_output
+        else:
+            raise TypeError(f"Unexpected CLIP image feature output: {type(image_features)!r}")
     image_features = image_features / image_features.norm(dim=-1, keepdim=True)
     content_similarity = torch.matmul(image_features[0], image_features[1]).item()
     return prompt_alignment, content_similarity
