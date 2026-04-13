@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--steps", type=int, default=30)
-    parser.add_argument("--guidance-scale", type=float, default=7.5)
+    parser.add_argument("--guidance-scale", type=float, default=3.0)
     parser.add_argument("--image-guidance-scale", type=float, default=1.5)
     return parser.parse_args()
 

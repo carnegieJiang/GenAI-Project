@@ -47,13 +47,15 @@ def tensor2img(image_tensor: torch.Tensor) -> Image.Image:
     image_tensor = transforms.ToPILImage()(image_tensor)
     return image_tensor
 
-def concat_images_horizontally(img1, img2):
+def concat_images_horizontally(img1, img2, img3):
     w1, h1 = img1.size
     w2, h2 = img2.size
+    w3, h3 = img3.size
 
-    new_img = Image.new("RGB", (w1 + w2, max(h1, h2)))
+    new_img = Image.new("RGB", (w1 + w2 + w3, max(h1, h2, h3)))
     new_img.paste(img1, (0, 0))
     new_img.paste(img2, (w1, 0))
+    new_img.paste(img3, (w1 + w2, 0))
     return new_img
 
 @dataclass
@@ -193,14 +195,14 @@ def train(cfg: TrainConfig):
                     )
 
         # Save each epoch
-        save_checkpoint(
-            model=model,
-            optimizer=optimizer,
-            global_step=global_step,
-            epoch=epoch,
-            save_dir=ckpt_dir,
-            tag=f"epoch_{epoch+1}",
-        )
+        # save_checkpoint(
+        #     model=model,
+        #     optimizer=optimizer,
+        #     global_step=global_step,
+        #     epoch=epoch,
+        #     save_dir=ckpt_dir,
+        #     tag=f"epoch_{epoch+1}",
+        # )
 
         # End-of-epoch samples
         run_validation_samples(
@@ -217,6 +219,14 @@ def train(cfg: TrainConfig):
     model.unet.save_pretrained(final_unet_dir)
     print(f"Saved final U-Net to: {final_unet_dir}")
 
+    final_text_encoder_dir = os.path.join(cfg.output_dir, "final_text_encoder")
+    model.text_encoder.save_pretrained(final_text_encoder_dir)
+    print(f"Saved final text encoder to: {final_text_encoder_dir}")
+
+    final_vae_dir = os.path.join(cfg.output_dir, "final_vae")
+    model.vae.save_pretrained(final_vae_dir)
+    print(f"Saved final VAE to: {final_vae_dir}")
+
 
 @torch.no_grad()
 def run_validation_samples(
@@ -232,6 +242,7 @@ def run_validation_samples(
 
     batch = next(iter(loader))
     source_images = batch["source_images"][:max_images].to(device)
+    target_images = batch["target_images"][:max_images].to(device)
     prompts = batch["prompts"][:max_images]
 
     edited = model.sample(
@@ -246,14 +257,15 @@ def run_validation_samples(
         out_path = os.path.join(save_dir, f"step_{global_step:07d}_sample_{i}.png")
         edit_img = tensor2img(edited[i])
         ori_img = tensor2img(source_images[i])
-        combined = concat_images_horizontally(ori_img, edit_img)
+        tar_img = tensor2img(target_images[i])
+        combined = concat_images_horizontally(ori_img, edit_img, tar_img)
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         combined.save(out_path)
         wandb.log(
             {
                 f"sample_{i}_pair": wandb.Image(
                     combined,
-                    caption=f"Left: original | Right: edited | Prompt: {prompts[i]}"
+                    caption=f"Left: original | Middle: edited | Right: target | Prompt: {prompts[i]}"
                 )
             },
             step=global_step,
@@ -278,6 +290,8 @@ def save_checkpoint(
         "global_step": global_step,
         "epoch": epoch,
         "unet": model.unet.state_dict(),
+        "text_encoder": model.text_encoder.state_dict(),
+        "vae": model.vae.state_dict(),
         "optimizer": optimizer.state_dict(),
     }
     torch.save(payload, path)
@@ -289,7 +303,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--data_path", type=str, default="/home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv")
-    parser.add_argument("--output_dir", type=str, default="/home/ec2-user/GenAI-Project/model/diffusion_outputs")
+    parser.add_argument("--output_dir", type=str, default="/home/ec2-user/GenAI-Project/model/diffusion_outputs/hptune_test")
 
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -297,14 +311,14 @@ def parse_args():
 
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-2)
-    parser.add_argument("--num_epochs", type=int, default=10)
+    parser.add_argument("--num_epochs", type=int, default=8)
     parser.add_argument("--grad_accum_steps", type=int, default=1)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
 
     parser.add_argument("--prompt_dropout_prob", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
 
-    parser.add_argument("--save_every_steps", type=int, default=1000)
+    parser.add_argument("--save_every_steps", type=int, default=10000)
     parser.add_argument("--sample_every_steps", type=int, default=50)
     parser.add_argument("--num_sample_images", type=int, default=2)
 
