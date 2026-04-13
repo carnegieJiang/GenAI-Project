@@ -19,9 +19,6 @@ from methods.diffusion.diff_model import LatentDiffusionUNet, get_opt
 from dataset.dataset import make_dataloader
 import wandb 
 
-# =========================
-# Utilities
-# =========================
 
 def set_seed(seed: int) -> None:
     random.seed(seed)
@@ -166,8 +163,7 @@ def train(cfg: TrainConfig):
                     optimizer.step()
                 if scheduler is not None:
                     scheduler.step()
-
-                optimizer.zero_grad()
+                    
                 global_step += 1
 
                 avg_loss = running_loss / cfg.grad_accum_steps

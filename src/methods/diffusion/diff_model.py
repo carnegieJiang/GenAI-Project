@@ -178,16 +178,54 @@ class LatentDiffusionUNet(nn.Module):
         guided_noise = noise_pred_cfg - recon_guidance_scale * grad
         return guided_noise
 
-    # @torch.no_grad()
-    # def sample(self, source_images: torch.Tensor, prompts: list[str], strength=0.6, num_inference_steps=50, text_guidance_scale=7.5, image_guidance_scale=1.0):
+    @torch.no_grad()
+    def sample(self, source_images: torch.Tensor, prompts: list[str], strength=0.6, num_inference_steps=50, text_guidance_scale=7.5, image_guidance_scale=1.0):
 
+        device = source_images.device
+        batch_size = source_images.shape[0]
+
+        prompt_embeds = self.encode_prompt(prompts).to(device)
+        uncond_embeds = self.encode_prompt([""] * batch_size).to(device)
+
+        init_latents = self.encode_image(source_images)
+
+        self.noise_scheduler.set_timesteps(num_inference_steps, device=device)
+
+        init_timestep = int(num_inference_steps * strength)
+        init_timestep = min(init_timestep, num_inference_steps)
+        t_start_index = max(num_inference_steps - init_timestep, 0)
+
+        timestep = self.noise_scheduler.timesteps[t_start_index]
+        noise = torch.randn_like(init_latents)
+
+        latents = self.noise_scheduler.add_noise(init_latents, noise, timestep)
+
+        for t in self.noise_scheduler.timesteps[t_start_index:]:
+            latent_model_input = torch.cat([latents, latents], dim=0)
+            text_input = torch.cat([uncond_embeds, prompt_embeds], dim=0)
+
+            noise_pred = self.unet(
+                sample=latent_model_input,
+                timestep=t,
+                encoder_hidden_states=text_input,
+            ).sample
+
+            noise_uncond, noise_text = noise_pred.chunk(2)
+            noise_pred = noise_uncond + text_guidance_scale * (noise_text - noise_uncond)
+
+            latents = self.noise_scheduler.step(noise_pred, t, latents).prev_sample
+
+        edited = self.decode_latent(latents)
+        return edited
+
+    # def sample(self, source_images, prompts, strength=0.6, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
     #     device = source_images.device
     #     batch_size = source_images.shape[0]
 
-    #     prompt_embeds = self.encode_prompt(prompts).to(device)
-    #     uncond_embeds = self.encode_prompt([""] * batch_size).to(device)
+    #     prompt_embeds = self.encode_prompt(prompts)
+    #     uncond_embeds = self.encode_prompt([""] * batch_size)
 
-    #     init_latents = self.encode_image(source_images)
+    #     source_latents = self.encode_image(source_images)
 
     #     self.noise_scheduler.set_timesteps(num_inference_steps, device=device)
 
@@ -196,9 +234,8 @@ class LatentDiffusionUNet(nn.Module):
     #     t_start_index = max(num_inference_steps - init_timestep, 0)
 
     #     timestep = self.noise_scheduler.timesteps[t_start_index]
-    #     noise = torch.randn_like(init_latents)
-
-    #     latents = self.noise_scheduler.add_noise(init_latents, noise, timestep)
+    #     noise = torch.randn_like(source_latents)
+    #     latents = self.noise_scheduler.add_noise(source_latents, noise, timestep)
 
     #     for t in self.noise_scheduler.timesteps[t_start_index:]:
     #         latent_model_input = torch.cat([latents, latents], dim=0)
@@ -213,49 +250,20 @@ class LatentDiffusionUNet(nn.Module):
     #         noise_uncond, noise_text = noise_pred.chunk(2)
     #         noise_pred = noise_uncond + text_guidance_scale * (noise_text - noise_uncond)
 
-    #         latents = self.noise_scheduler.step(noise_pred, t, latents).prev_sample
+    #         if recon_guidance_scale > 0:
+    #             with torch.enable_grad():
+    #                 noise_pred_cfg = self.compute_recon_guidance(
+    #                     latents=latents,
+    #                     t=t,
+    #                     noise_pred_cfg=noise_pred_cfg,
+    #                     source_latents=source_latents,
+    #                     recon_guidance_scale=recon_guidance_scale,
+    #                 )
+
+    #         latents = self.noise_scheduler.step(noise_pred_cfg, t, latents).prev_sample
 
     #     edited = self.decode_latent(latents)
     #     return edited
-
-    def sample(self, source_images, prompts, strength=0.6, num_inference_steps=50, guidance_scale=7.5, recon_guidance_scale=0.0):
-        device = source_images.device
-        batch_size = source_images.shape[0]
-
-        prompt_embeds = self.encode_prompt(prompts)
-        uncond_embeds = self.encode_prompt([""] * batch_size)
-
-        source_latents = self.encode_image(source_images)
-
-        self.noise_scheduler.set_timesteps(num_inference_steps, device=device)
-
-        init_timestep = int(num_inference_steps * strength)
-        init_timestep = min(init_timestep, num_inference_steps)
-        t_start_index = max(num_inference_steps - init_timestep, 0)
-
-        timestep = self.noise_scheduler.timesteps[t_start_index]
-        noise = torch.randn_like(source_latents)
-        latents = self.noise_scheduler.add_noise(source_latents, noise, timestep)
-
-        for t in self.noise_scheduler.timesteps[t_start_index:]:
-            noise_pred_cfg = self.predict_cfg_noise(
-                latents, t, prompt_embeds, uncond_embeds, guidance_scale
-            )
-
-            if recon_guidance_scale > 0:
-                with torch.enable_grad():
-                    noise_pred_cfg = self.compute_recon_guidance(
-                        latents=latents,
-                        t=t,
-                        noise_pred_cfg=noise_pred_cfg,
-                        source_latents=source_latents,
-                        recon_guidance_scale=recon_guidance_scale,
-                    )
-
-            latents = self.noise_scheduler.step(noise_pred_cfg, t, latents).prev_sample
-
-        edited = self.decode_latent(latents)
-        return edited
 
 
 def get_opt(model, lr=2e-5, weight_decay=1e-2, scheduler_T_max=100):
