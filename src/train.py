@@ -147,6 +147,7 @@ def train(cfg: TrainConfig):
 
             outputs = model(batch["source_images"], batch["target_images"], batch["prompts"])
             loss = criterion(outputs["pred_noise"], outputs["target_noise"]) / cfg.grad_accum_steps
+            running_loss += loss.item()
 
             if scaler.is_enabled():
                 scaler.scale(loss).backward()
@@ -169,13 +170,13 @@ def train(cfg: TrainConfig):
                 optimizer.zero_grad()
                 global_step += 1
 
-                running_loss += loss.item() * cfg.grad_accum_steps
-                avg_loss = running_loss / (step+1)
+                avg_loss = running_loss / cfg.grad_accum_steps
+                running_loss = 0.0
                 wandb.log({"train_loss": avg_loss}, step=global_step)
                 pbar.set_postfix(loss=f"{avg_loss:.6f}")
 
-                if global_step % cfg.sample_every_steps == 0:
-                    run_validation_samples(
+            if global_step % cfg.sample_every_steps == 0:
+                run_validation_samples(
                         model=model,
                         loader=val_loader if val_loader is not None else train_loader,
                         device=device,
@@ -184,8 +185,8 @@ def train(cfg: TrainConfig):
                         max_images=cfg.num_sample_images,
                     )
 
-                if global_step % cfg.save_every_steps == 0:
-                    save_checkpoint(
+            if global_step % cfg.save_every_steps == 0:
+                save_checkpoint(
                         model=model,
                         optimizer=optimizer,
                         global_step=global_step,
