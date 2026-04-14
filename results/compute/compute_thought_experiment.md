@@ -2,33 +2,58 @@
 
 ## Hardware used so far
 
-All main GPU work was run on AWS using a `g5.2xlarge` EC2 instance. This instance has:
+Our GPU work so far has been run on AWS using a `g5.2xlarge` EC2 instance. The machine has:
 
-| Instance | GPU | GPU memory | Notes |
+| Instance | GPU | GPU memory | Used for |
 |---|---|---:|---|
-| AWS EC2 `g5.2xlarge` | 1x NVIDIA A10G | about 24 GB | Used for baseline training, Method 1 training, and baseline inference/evaluation |
+| AWS EC2 `g5.2xlarge` | 1x NVIDIA A10G | about 24 GB | StyleBooth setup, InstructPix2Pix baseline training/evaluation, and partial Method 1 training |
 
-For cost conversion, I use the us-east-1 Linux on-demand estimate of **$1.212 per g5.2xlarge instance-hour**. AWS on-demand pricing charges by instance time, and recent pricing references list `g5.2xlarge` at about **$1.212/hour** in us-east-1.
+For cost conversion, we use an approximate on-demand price of **$1.212 per g5.2xlarge instance-hour** in us-east-1. This means each GPU-hour on this instance costs about **$1.21**. These estimates are not exact AWS billing records, but they are reasonable for reporting compute usage.
+
+## What has actually been run
+
+So far, the completed baseline work is stronger than the Method 1 work:
+
+| Component | Status | Notes |
+|---|---|---|
+| StyleBooth dataset setup | Completed | Dataset was downloaded/unpacked on AWS and subset metadata was prepared. |
+| Baseline training | Completed | InstructPix2Pix was fine-tuned using `data/stylebooth_dataset` with `max_train_steps=10000`. This corresponds to the full StyleBooth dataset path in `src/baseline/run.sh`, not just the 8-example report subset. |
+| Baseline evaluation | Completed | The trained baseline was evaluated on 8 examples from the StyleBooth subset for the baseline-results section. |
+| Method 1 training | Partial / paused | Method 1 latent diffusion training was started and produced checkpoints/samples, but the run was stopped/paused because it was taking too long. We are not claiming this is a fully completed full-dataset Method 1 training run yet. |
+| Method 1 evaluation | Not finalized yet | The group still needs to decide whether to evaluate the partial checkpoint, train Method 1 on a smaller subset, or resume longer training. |
 
 ## Estimated GPU hours so far
 
-These are estimates based on the model checkpoints, saved sample timestamps, and the runs we know were completed. They should be treated as approximate GPU-hours, not exact billing records.
+These estimates include training, evaluation, dataset setup, and basic overhead such as model loading/debugging. They should be treated as approximate GPU-hours.
 
 | Task | What was run | Estimated GPU hours | Estimated cost |
 |---|---|---:|---:|
-| Dataset setup / StyleBooth prep | Downloading/unpacking dataset and preparing the subset metadata | ~0.5 hr | ~$0.61 |
-| Baseline training | Fine-tuned InstructPix2Pix baseline to 10,000 steps | ~4.0 hr | ~$4.85 |
-| Baseline evaluation | Ran trained baseline on 8 StyleBooth examples and computed CLIP/timing results | ~0.1 hr | ~$0.12 |
-| Method 1 training | Latent diffusion Method 1 training runs/checkpoints and sample generation | ~10.4 hr | ~$12.60 |
-| **Total so far** |  | **~15.0 GPU hr** | **~$18.18** |
+| Dataset setup / StyleBooth prep | Downloading/unpacking StyleBooth, converting/preparing metadata, and moving files around | ~0.5 hr | ~$0.61 |
+| Baseline training | Fine-tuned InstructPix2Pix on `data/stylebooth_dataset` to 10,000 steps | ~4.0 hr | ~$4.85 |
+| Baseline evaluation | Ran trained InstructPix2Pix on 8 StyleBooth subset examples and computed timing/CLIP metrics | ~0.1 hr | ~$0.12 |
+| Method 1 partial training | Started latent diffusion Method 1 training; saved intermediate checkpoints/samples, but did not complete the intended full training plan | ~10.4 hr | ~$12.60 |
+| Misc. setup/debugging overhead | Environment setup, model loading tests, small failed/partial runs, monitoring, and data/model path debugging | ~1.0 hr | ~$1.21 |
+| **Total so far** |  | **~16.0 GPU hr** | **~$19.39** |
 
-The largest compute cost so far was Method 1 training. Baseline evaluation was small by comparison: the final baseline evaluation averaged **2.329 seconds per image** for 8 examples, so the inference cost itself was negligible compared with training.
+The baseline evaluation itself was cheap compared with training. For the 8-image baseline evaluation, the trained InstructPix2Pix model averaged **2.329 seconds per image** on the AWS A10G GPU. Most of the compute cost came from the baseline training and the partial Method 1 training.
 
 ## Why these compute results make sense
 
-This compute usage matches the experimental plan. The project first needed a working dataset pipeline and baseline model, then needed baseline results, then used the same AWS GPU setup for Method 1 training. The baseline training and Method 1 training were the main GPU consumers because they require backpropagation and checkpointing. In contrast, dataset preparation and baseline inference mostly involved file I/O or forward passes, so they used much less compute.
+This compute pattern matches our experimental plan. The baseline had to be trained first so we could produce baseline results for comparison. Then Method 1 training was started as the next research method, but it was paused because full training was taking too long. That is expected for diffusion-based training: it is much more expensive than running inference on a few validation examples.
 
-The `g5.2xlarge` / A10G setup is a reasonable choice for our project because it is strong enough to run Stable Diffusion / InstructPix2Pix-style models while being much cheaper than larger multi-GPU machines. It is also aligned with our current project scale: we are comparing baselines and early methods, not training a large foundation model from scratch.
+It also makes sense that the baseline evaluation was run on a subset rather than the full dataset for the report checkpoint. The goal of the baseline-results section is to show an easy-to-read table/figure with timing, metrics, and interpretation. Running on a small subset gives us enough evidence for a checkpoint/report section without spending unnecessary compute before the final evaluation plan is settled.
+
+## What we should do next
+
+For the report, we should be honest that Method 1 is not fully finished yet. The group has three realistic options:
+
+| Option | Compute implication | Report implication |
+|---|---|---|
+| Use the partial Method 1 checkpoint | Lowest extra compute | Fastest way to compare against the baseline, but results should be labeled as preliminary. |
+| Train Method 1 on a smaller subset | Moderate extra compute | Cleaner experimental story because both training and evaluation scope are controlled. |
+| Resume Method 1 full training | Highest extra compute | Stronger final result if time/budget allows, but riskier because it may keep taking too long. |
+
+The safest plan for the report is probably to evaluate the best available Method 1 checkpoint on the same subset used for baseline evaluation, then optionally run a smaller controlled Method 1 training experiment if time allows. That would let us compare baseline vs. Method 1 under the same evaluation setup instead of waiting for an expensive full-dataset Method 1 run.
 
 ## If we had an additional $450 in AWS credits
 
@@ -38,22 +63,26 @@ At about **$1.212/hour**, an extra **$450** would buy roughly:
 $450 / $1.212 per hour = about 371 g5.2xlarge GPU-hours
 ```
 
-I would spend the credits to improve the research goals rather than just run longer training blindly.
+I would spend the extra credits on controlled experiments that directly support the style-vs-content research question, not just on training longer without a plan.
 
 | Use of extra credits | Approx. budget | Approx. GPU hours | Why this helps |
 |---|---:|---:|---|
-| Fuller Method 1 training and checkpoints | ~$170 | ~140 hr | Train Method 1 longer and evaluate whether performance improves or plateaus. |
-| Baseline and Method 1 evaluation on a larger validation subset | ~$60 | ~50 hr | Move from 8 qualitative examples to a larger, more reliable validation set with CLIP/content metrics. |
-| Ablations on guidance strength / prompt wording | ~$80 | ~66 hr | Test the style-content tradeoff by varying guidance and prompt templates. |
-| Additional comparison runs / debugging budget | ~$90 | ~74 hr | Rerun failed jobs, test alternative hyperparameters, and fix implementation issues without risking the whole plan. |
-| Final qualitative result generation | ~$50 | ~41 hr | Generate polished final figures across multiple styles for the report/poster. |
+| Finish or extend Method 1 training | ~$160 | ~132 hr | Either resume the full Method 1 run or train a smaller controlled version until results stabilize. |
+| Evaluate baseline and Method 1 on a larger validation subset | ~$70 | ~58 hr | Move beyond 8 examples and produce a stronger metrics table for CLIP alignment and content preservation. |
+| Guidance/prompt ablations | ~$80 | ~66 hr | Test how prompt wording and guidance strength affect the style-content tradeoff. |
+| Checkpoint comparison for Method 1 | ~$60 | ~50 hr | Compare partial checkpoints to see whether longer training actually improves results. |
+| Debugging and rerun buffer | ~$50 | ~41 hr | Leave budget for failed jobs, environment issues, reruns, and final figure generation. |
+| Final qualitative result generation | ~$30 | ~25 hr | Generate polished examples across several styles for the final report/poster. |
 
-The most important use would be evaluating the style-content tradeoff more thoroughly. For example, we could run the baseline and Method 1 on a larger StyleBooth subset and report CLIP prompt alignment against content-preservation metrics. This directly supports the project goal of comparing how different methods balance style alignment with content preservation.
+The highest-value use of extra credits would be to make the Method 1 comparison more reliable. Specifically, we should compare the baseline and Method 1 on the same evaluation subset, then scale up to more examples if the method is working. This directly supports the project goal of analyzing the tradeoff between style alignment and content preservation.
 
-I would not spend the extra credits on training a completely new large model from scratch. That would be outside our project scope and would probably use the budget inefficiently. A better plan is to use the credits for longer controlled training, more validation examples, more ablations, and stronger qualitative figures.
+We should not use the extra credits to train a brand-new large model from scratch. That would be outside the project scope and would likely waste the budget. The better plan is to use the credits for controlled Method 1 training, checkpoint comparisons, more validation examples, and clearer final figures.
 
 ## Sources / assumptions
 
 - Hardware was checked on the AWS machine: `g5.2xlarge`, 1x NVIDIA A10G GPU.
 - Cost estimate uses about `$1.212/hour` for AWS EC2 `g5.2xlarge` Linux on-demand pricing in us-east-1.
-- GPU-hour estimates are approximate and based on checkpoint/sample timestamps, not exact AWS billing exports.
+- Baseline training used the full dataset path shown in `src/baseline/run.sh`: `/home/ec2-user/GenAI-Project/data/stylebooth_dataset`.
+- Baseline evaluation used 8 examples from the StyleBooth subset, as shown in `results/baseline/baseline_results.csv`.
+- Method 1 training is described as partial/paused because the run did not finish the intended full training plan.
+- GPU-hour estimates are approximate and based on observed checkpoints, sample timestamps, known runs, and setup/debugging activity, not exact AWS billing exports.
