@@ -1,4 +1,4 @@
-export MODEL_NAME="/home/ec2-user/GenAI-Project/src/baseline/instruct-pix2pix/checkpoints/instruct-pix2pix-diffusers"
+export MODEL_NAME="/home/ec2-user/GenAI-Project/model/baseline/instruct-pix2pix-diffusers"
 export DATA_DIR="/home/ec2-user/GenAI-Project/data/stylebooth_dataset"
 export OUTPUT_DIR="/home/ec2-user/GenAI-Project/model/instructp2p"
 

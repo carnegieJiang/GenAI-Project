@@ -76,10 +76,11 @@ class TrainConfig:
     sample_every_steps: int = 1000
     num_sample_images: int = 4
     mixed_precision: str = "fp16"  # "no", "fp16", "bf16"
-    freeze_vae: bool = True
-    freeze_text_encoder: bool = True
+    freeze_vae: bool = False
+    freeze_text_encoder: bool = False
     text_guidance_scale: float = 7.5
     reconstruction_guidance_scale: float = 0.0
+    use_t5: bool = False
 
 
 def get_dtype(mixed_precision: str):
@@ -104,9 +105,6 @@ def train(cfg: TrainConfig):
     set_seed(cfg.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # use_amp = device.type == "cuda" and cfg.mixed_precision in ["fp16", "bf16"]
-    # amp_dtype = get_dtype(cfg.mixed_precision)
-
 
     train_loader, val_loader = make_dataloader(
         metadata_path=cfg.data_path,
@@ -122,6 +120,7 @@ def train(cfg: TrainConfig):
         prompt_dropout_prob=cfg.prompt_dropout_prob,
         freeze_vae=cfg.freeze_vae,
         freeze_text=cfg.freeze_text_encoder,
+        use_t5=cfg.use_t5,
     )
     model.to(device)
     criterion, optimizer, scheduler = get_opt(model, lr=cfg.lr, weight_decay=cfg.weight_decay, scheduler_T_max=-1)
@@ -130,6 +129,7 @@ def train(cfg: TrainConfig):
     use_amp = device.type == "cuda" and cfg.mixed_precision in ["fp16", "bf16"]
     amp_dtype = get_dtype(cfg.mixed_precision)
     scaler = torch.amp.GradScaler(enabled=(use_amp and cfg.mixed_precision == "fp16"))
+    smooth_loss = 0.0
 
     for epoch in range(cfg.num_epochs):
 
@@ -149,6 +149,7 @@ def train(cfg: TrainConfig):
             outputs = model(batch["source_images"], batch["target_images"], batch["prompts"])
             loss = criterion(outputs["pred_noise"], outputs["target_noise"]) / cfg.grad_accum_steps
             running_loss += loss.item()
+            smooth_loss += loss.item()
 
             if scaler.is_enabled():
                 scaler.scale(loss).backward()
@@ -156,7 +157,6 @@ def train(cfg: TrainConfig):
                 loss.backward()
 
             if (step + 1) % cfg.grad_accum_steps == 0:
-                # torch.nn.utils.clip_grad_norm_(trainable_params, cfg.max_grad_norm)
                 if scaler.is_enabled():
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
@@ -165,17 +165,18 @@ def train(cfg: TrainConfig):
                 else:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
                     optimizer.step()
-                if scheduler is not None:
-                    scheduler.step()
-                    
+
+                optimizer.zero_grad(set_to_none=True)
                 global_step += 1
 
                 avg_loss = running_loss / cfg.grad_accum_steps
+                avg_smooth_loss = smooth_loss / global_step
                 running_loss = 0.0
                 wandb.log({"train_loss": avg_loss}, step=global_step)
+                wandb.log({"train_loss_smooth": avg_smooth_loss}, step=global_step)
                 pbar.set_postfix(loss=f"{avg_loss:.6f}")
 
-            if global_step % cfg.sample_every_steps == 0:
+            if (global_step+1) % cfg.sample_every_steps == 0:
                 run_validation_samples(
                         model=model,
                         loader=val_loader if val_loader is not None else train_loader,
@@ -185,7 +186,7 @@ def train(cfg: TrainConfig):
                         max_images=cfg.num_sample_images,
                     )
 
-            if global_step % cfg.save_every_steps == 0:
+            if (global_step+1) % cfg.save_every_steps == 0:
                 save_checkpoint(
                         model=model,
                         optimizer=optimizer,
@@ -214,18 +215,21 @@ def train(cfg: TrainConfig):
             max_images=cfg.num_sample_images,
         )
 
-    # Save final U-Net in diffusers format
-    final_unet_dir = os.path.join(cfg.output_dir, "final_unet")
-    model.unet.save_pretrained(final_unet_dir)
-    print(f"Saved final U-Net to: {final_unet_dir}")
+    # final_unet_dir = os.path.join(cfg.output_dir, "final_unet")
+    # model.unet.save_pretrained(final_unet_dir)
+    # print(f"Saved final U-Net to: {final_unet_dir}")
 
-    final_text_encoder_dir = os.path.join(cfg.output_dir, "final_text_encoder")
-    model.text_encoder.save_pretrained(final_text_encoder_dir)
-    print(f"Saved final text encoder to: {final_text_encoder_dir}")
+    # final_text_encoder_dir = os.path.join(cfg.output_dir, "final_text_encoder")
+    # model.text_encoder.save_pretrained(final_text_encoder_dir)
+    # print(f"Saved final text encoder to: {final_text_encoder_dir}")
 
-    final_vae_dir = os.path.join(cfg.output_dir, "final_vae")
-    model.vae.save_pretrained(final_vae_dir)
-    print(f"Saved final VAE to: {final_vae_dir}")
+    # final_vae_dir = os.path.join(cfg.output_dir, "final_vae")
+    # model.vae.save_pretrained(final_vae_dir)
+    # print(f"Saved final VAE to: {final_vae_dir}")
+
+    final_model_dir = os.path.join(cfg.output_dir)
+    torch.save(model.state_dict(), os.path.join(final_model_dir, "final_model.pt"))
+    print(f"Saved final model state dict to: {final_model_dir}/final_model.pt")
 
 
 @torch.no_grad()
@@ -328,6 +332,7 @@ def parse_args():
 
     parser.add_argument("--text_guidance_scale", type=float, default=7.5)
     parser.add_argument("--reconstruction_guidance_scale", type=float, default=0.0)
+    parser.add_argument("--use_t5", action="store_true")
 
     args = parser.parse_args()
 
@@ -352,6 +357,7 @@ def parse_args():
         freeze_text_encoder=args.freeze_text_encoder,
         text_guidance_scale=args.text_guidance_scale,
         reconstruction_guidance_scale=args.reconstruction_guidance_scale,
+        use_t5=args.use_t5,
     )
     return cfg
 

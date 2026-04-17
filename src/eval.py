@@ -17,14 +17,14 @@ from torchvision import transforms
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run baseline InstructPix2Pix results on StyleBooth samples.")
     parser.add_argument("--model-id", default="diffusion", choices=["baseline", "diffusion", "flow", "decouple"], help="Identifier for the model/method being evaluated.")
-    parser.add_argument("--model-dir", default="/home/ec2-user/GenAI-Project/model/diffusion_outputs/final_unet")
+    parser.add_argument("--model-dir", default="/home/ec2-user/GenAI-Project/model/diffusion_outputs/hptune_test/heat")
     parser.add_argument("--metadata-path", default="/home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv")
-    parser.add_argument("--output-dir", default="/home/ec2-user/GenAI-Project/results/diffusion")
+    parser.add_argument("--output-dir", default="/home/ec2-user/GenAI-Project/results/diffusion_heat")
     parser.add_argument("--num-samples", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--steps", type=int, default=30)
-    parser.add_argument("--guidance-scale", type=float, default=3.0)
+    parser.add_argument("--guidance-scale", type=float, default=7.5)
     parser.add_argument("--image-guidance-scale", type=float, default=1.5)
     return parser.parse_args()
 
@@ -91,8 +91,7 @@ def main() -> None:
         pipe = pipe.to(device)
         pipe.set_progress_bar_config(disable=True)
     elif args.model_id == "diffusion":
-        pipe = LatentDiffusionUNet(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True) 
-        pipe.unet = UNet2DConditionModel.from_pretrained(args.model_dir)
+        pipe = LatentDiffusionUNet(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
         pipe = pipe.to(device)
         pipe.eval()
 
@@ -121,9 +120,10 @@ def main() -> None:
             ).images[0]
             output = transforms.ToTensor()(output).unsqueeze(0).to(device)
         elif args.model_id == "diffusion":
+            source = source * 2.0 - 1.0
             output = pipe.sample(
                 source_images=source,
-                prompts=prompt,
+                prompts=[prompt],
                 num_inference_steps=args.steps,
                 text_guidance_scale=args.guidance_scale,
             )

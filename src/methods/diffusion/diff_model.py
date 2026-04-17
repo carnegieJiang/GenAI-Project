@@ -34,6 +34,7 @@ class LatentDiffusionUNet(nn.Module):
         freeze_text: bool = True,
         use_t5: bool = False,
         prompt_dropout_prob: float = 0.1,
+        from_pretrained = None, 
     ):
         super().__init__()
 
@@ -41,7 +42,30 @@ class LatentDiffusionUNet(nn.Module):
         self.vae = AutoencoderKL.from_pretrained(vae_name, subfolder="vae")
 
         # UNet: latent denoiser
-        self.unet = UNet2DConditionModel.from_pretrained(unet_name, subfolder="unet")
+        base_unet = UNet2DConditionModel.from_pretrained(unet_name, subfolder="unet")
+
+        config = dict(base_unet.config)
+        config["in_channels"] = 8
+
+        self.unet = UNet2DConditionModel(**config)
+
+        # load all compatible weights except conv_in.weight
+        state_dict = base_unet.state_dict()
+        old_conv_in_weight = state_dict.pop("conv_in.weight")
+        old_conv_in_bias = state_dict.get("conv_in.bias", None)
+
+        missing, unexpected = self.unet.load_state_dict(state_dict, strict=False)
+        print("Missing keys:", missing)
+        print("Unexpected keys:", unexpected)
+
+        # manually initialize new 8-channel conv_in
+        with torch.no_grad():
+            self.unet.conv_in.weight.zero_()                     # [320, 8, 3, 3]
+            self.unet.conv_in.weight[:, :4, :, :] = old_conv_in_weight
+            # extra 4 channels stay zero
+
+            if old_conv_in_bias is not None:
+                self.unet.conv_in.bias.copy_(old_conv_in_bias)
 
         # Text encoder + tokenizer
         if use_t5:
@@ -50,6 +74,11 @@ class LatentDiffusionUNet(nn.Module):
         else:
             self.tokenizer = CLIPTokenizer.from_pretrained(text_name)
             self.text_encoder = CLIPTextModel.from_pretrained(text_name)
+        
+        if from_pretrained is not None:
+            state_dict = torch.load(from_pretrained, map_location="cpu")
+            self.load_state_dict(state_dict)
+            print(f"Loaded model weights from {from_pretrained}")
 
         # Scheduler for training/inference
         self.noise_scheduler = DDPMScheduler(
@@ -113,25 +142,16 @@ class LatentDiffusionUNet(nn.Module):
         )
         return text_outputs.last_hidden_state
 
-    def forward(self, source_images: torch.Tensor, target_images: torch.Tensor, prompts):
-        """
-        Training step for paired image editing:
-        source_images: [B, 3, H, W] in [-1, 1]
-        target_images: [B, 3, H, W] in [-1, 1]
-        prompts: list[str]
-
-        We train the UNet to denoise target latents conditioned on prompt.
-        """
+    def forward(self, source_images, target_images, prompts):
         device = source_images.device
         batch_size = source_images.shape[0]
         dropped_prompts = prompt_dropout(prompts, drop=self.prompt_dropout_prob)
 
-        # Encode target image to latent
         with torch.no_grad():
+            source_latents = self.encode_image(source_images)
             target_latents = self.encode_image(target_images)
             prompt_embeds = self.encode_prompt(dropped_prompts)
 
-        # Sample random timestep
         timesteps = torch.randint(
             0,
             self.noise_scheduler.config.num_train_timesteps,
@@ -140,13 +160,13 @@ class LatentDiffusionUNet(nn.Module):
             dtype=torch.long,
         )
 
-        # Add noise to target latents
         noise = torch.randn_like(target_latents)
-        noisy_latents = self.noise_scheduler.add_noise(target_latents, noise, timesteps)
+        noisy_target_latents = self.noise_scheduler.add_noise(target_latents, noise, timesteps)
 
-        # Predict the noise
+        model_input = torch.cat([noisy_target_latents, source_latents], dim=1)
+
         noise_pred = self.unet(
-            sample=noisy_latents,
+            sample=model_input,
             timestep=timesteps,
             encoder_hidden_states=prompt_embeds,
         ).sample
@@ -219,7 +239,7 @@ class LatentDiffusionUNet(nn.Module):
     #     return edited
 
     @torch.no_grad()
-    def sample(self, source_images, prompts, strength=0.6, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
+    def sample(self, source_images, prompts, strength=0.0, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
         device = source_images.device
         batch_size = source_images.shape[0]
 
@@ -240,10 +260,12 @@ class LatentDiffusionUNet(nn.Module):
 
         for t in self.noise_scheduler.timesteps[t_start_index:]:
             latent_model_input = torch.cat([latents, latents], dim=0)
+            source_model_input = torch.cat([source_latents, source_latents], dim=0)
+            unet_input = torch.cat([latent_model_input, source_model_input], dim=1)
             text_input = torch.cat([uncond_embeds, prompt_embeds], dim=0)
 
             noise_pred = self.unet(
-                sample=latent_model_input,
+                sample=unet_input,
                 timestep=t,
                 encoder_hidden_states=text_input,
             ).sample
@@ -267,7 +289,7 @@ class LatentDiffusionUNet(nn.Module):
         return edited
 
 
-def get_opt(model, lr=2e-5, weight_decay=1e-2, scheduler_T_max=100):
+def get_opt(model, lr=1e-5, weight_decay=1e-2, scheduler_T_max=100):
     criterion = torch.nn.MSELoss()
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=weight_decay)
     if scheduler_T_max > 0:
