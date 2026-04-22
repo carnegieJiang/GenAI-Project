@@ -5,6 +5,8 @@ import torch.nn.functional as F
 from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler
 from transformers import CLIPTokenizer, CLIPTextModel
 from transformers import T5Tokenizer, T5EncoderModel
+import timm
+from torchvision import transforms
 
 def prompt_dropout(prompts, drop=0.1):
     new_prompts = []
@@ -30,8 +32,8 @@ class LatentFlowUNet(nn.Module):
         vae_name: str = "runwayml/stable-diffusion-v1-5",
         unet_name: str = "runwayml/stable-diffusion-v1-5",
         text_name: str = "openai/clip-vit-large-patch14",
-        freeze_vae: bool = True,
-        freeze_text: bool = True,
+        freeze_vae: bool = False,
+        freeze_text: bool = False,
         use_t5: bool = False,
         prompt_dropout_prob: float = 0.1,
         from_pretrained = None, 
@@ -84,6 +86,9 @@ class LatentFlowUNet(nn.Module):
 
         # Stable Diffusion VAE usually uses a latent scaling factor from config
         self.latent_scaling_factor = getattr(self.vae.config, "scaling_factor", 0.18215)
+        
+        self.freeze_vae = freeze_vae
+        self.freeze_text = freeze_text
 
         if freeze_vae:
             for p in self.vae.parameters():
@@ -95,8 +100,35 @@ class LatentFlowUNet(nn.Module):
         
         self.prompt_dropout_prob = prompt_dropout_prob
         self.t_scaler = t_scaler
+        self.dino_model = None
+    
+    def recon_setup(self):
+        self.dino_model = timm.create_model(
+            "vit_base_patch16_224.dino", pretrained=True, num_classes=0
+        ).eval()
 
-    @torch.no_grad()
+        for p in self.dino_model.parameters():
+            p.requires_grad = False
+
+        self.dino_resize = transforms.Resize((224, 224))
+        self.dino_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        self.dino_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+
+    def dino_features_from_image(self, images: torch.Tensor):
+        # images expected in [-1, 1] from VAE decode
+        x = (images + 1.0) / 2.0
+        x = x.clamp(0, 1)
+
+        x = self.dino_resize(x)
+        mean = self.dino_mean.to(x.device, x.dtype)
+        std = self.dino_std.to(x.device, x.dtype)
+        x = (x - mean) / std
+
+        feats = self.dino_model(x)
+        feats = F.normalize(feats, dim=-1)
+        return feats
+
+    # @torch.no_grad()
     def encode_image(self, images: torch.Tensor) -> torch.Tensor:
         """
         images: [B, 3, H, W], expected in [-1, 1]
@@ -107,7 +139,7 @@ class LatentFlowUNet(nn.Module):
         latents = latents * self.latent_scaling_factor
         return latents
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def decode_latent(self, latents: torch.Tensor) -> torch.Tensor:
         """
         latents: [B, 4, H/8, W/8]
@@ -117,7 +149,7 @@ class LatentFlowUNet(nn.Module):
         images = self.vae.decode(latents).sample
         return images
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def encode_prompt(self, prompts):
         """
         prompts: list[str]
@@ -144,7 +176,12 @@ class LatentFlowUNet(nn.Module):
         batch_size = source_images.shape[0]
         dropped_prompts = prompt_dropout(prompts, drop=self.prompt_dropout_prob)
 
-        with torch.no_grad():
+        if self.freeze_vae and self.freeze_text:
+            with torch.no_grad():
+                source_latents = self.encode_image(source_images)
+                target_latents = self.encode_image(target_images)
+                prompt_embeds = self.encode_prompt(dropped_prompts)
+        else:
             source_latents = self.encode_image(source_images)
             target_latents = self.encode_image(target_images)
             prompt_embeds = self.encode_prompt(dropped_prompts)
@@ -167,24 +204,35 @@ class LatentFlowUNet(nn.Module):
 
         return {"pred_velocity": pred_velocity, "target_velocity": target_velocity}
 
-    def compute_recon_guidance(
+    def compute_dino_recon_guidance(
         self,
         latents,
         pred_velocity,
-        source_latents,
-        recon_guidance_scale
+        feat_src,
+        recon_guidance_scale,
     ):
+        if self.dino_model is None:
+            self.recon_setup()
+            
         latents_for_grad = latents.detach().requires_grad_(True)
 
-        recon_loss = F.mse_loss(latents_for_grad, source_latents, reduction="mean")
+        decoded = self.decode_latent(latents_for_grad)   # in roughly [-1, 1]
+
+        feat_cur = self.dino_features_from_image(decoded)
+
+        recon_loss = 1.0 - (feat_cur * feat_src).sum(dim=-1).mean()
+
         grad = torch.autograd.grad(recon_loss, latents_for_grad)[0]
+
+        # optional stabilization
+        grad = grad / (grad.flatten(1).norm(dim=1).view(-1, 1, 1, 1) + 1e-8)
 
         guided_velocity = pred_velocity - recon_guidance_scale * grad
         return guided_velocity
 
 
     @torch.no_grad()
-    def sample(self, source_images, prompts, strength = 0, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
+    def sample(self, source_images, prompts, strength = 1.0, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
         device = source_images.device
         batch_size = source_images.shape[0]
 
@@ -216,14 +264,15 @@ class LatentFlowUNet(nn.Module):
             pred_v = v_uncond + text_guidance_scale * (v_text - v_uncond)
 
             if recon_guidance_scale > 0:
+                with torch.no_grad():
+                    source_dino_feats = self.dino_features_from_image(source_images)
                 with torch.enable_grad():
-                    pred_v = self.compute_recon_guidance(
+                    pred_v = self.compute_dino_recon_guidance(
                         latents=z,
                         pred_velocity=pred_v,
-                        source_latents=z_source,
+                        feat_src=source_dino_feats,
                         recon_guidance_scale=recon_guidance_scale,
                     )
-
 
             z = z + dt * pred_v
 

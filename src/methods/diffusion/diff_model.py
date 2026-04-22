@@ -30,8 +30,8 @@ class LatentDiffusionUNet(nn.Module):
         vae_name: str = "runwayml/stable-diffusion-v1-5",
         unet_name: str = "runwayml/stable-diffusion-v1-5",
         text_name: str = "openai/clip-vit-large-patch14",
-        freeze_vae: bool = True,
-        freeze_text: bool = True,
+        freeze_vae: bool = False,
+        freeze_text: bool = False,
         use_t5: bool = False,
         prompt_dropout_prob: float = 0.1,
         from_pretrained = None, 
@@ -88,6 +88,9 @@ class LatentDiffusionUNet(nn.Module):
 
         # Stable Diffusion VAE usually uses a latent scaling factor from config
         self.latent_scaling_factor = getattr(self.vae.config, "scaling_factor", 0.18215)
+        
+        self.freeze_vae = freeze_vae
+        self.freeze_text = freeze_text
 
         if freeze_vae:
             for p in self.vae.parameters():
@@ -99,7 +102,7 @@ class LatentDiffusionUNet(nn.Module):
         
         self.prompt_dropout_prob = prompt_dropout_prob
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def encode_image(self, images: torch.Tensor) -> torch.Tensor:
         """
         images: [B, 3, H, W], expected in [-1, 1]
@@ -110,7 +113,7 @@ class LatentDiffusionUNet(nn.Module):
         latents = latents * self.latent_scaling_factor
         return latents
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def decode_latent(self, latents: torch.Tensor) -> torch.Tensor:
         """
         latents: [B, 4, H/8, W/8]
@@ -120,7 +123,7 @@ class LatentDiffusionUNet(nn.Module):
         images = self.vae.decode(latents).sample
         return images
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def encode_prompt(self, prompts):
         """
         prompts: list[str]
@@ -147,7 +150,12 @@ class LatentDiffusionUNet(nn.Module):
         batch_size = source_images.shape[0]
         dropped_prompts = prompt_dropout(prompts, drop=self.prompt_dropout_prob)
 
-        with torch.no_grad():
+        if self.freeze_vae and self.freeze_text:
+            with torch.no_grad():
+                source_latents = self.encode_image(source_images)
+                target_latents = self.encode_image(target_images)
+                prompt_embeds = self.encode_prompt(dropped_prompts)
+        else:
             source_latents = self.encode_image(source_images)
             target_latents = self.encode_image(target_images)
             prompt_embeds = self.encode_prompt(dropped_prompts)
@@ -239,7 +247,7 @@ class LatentDiffusionUNet(nn.Module):
     #     return edited
 
     @torch.no_grad()
-    def sample(self, source_images, prompts, strength=0.0, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
+    def sample(self, source_images, prompts, strength=1.0, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
         device = source_images.device
         batch_size = source_images.shape[0]
 

@@ -11,6 +11,7 @@ from diffusers import StableDiffusionInstructPix2PixPipeline
 from PIL import Image, ImageDraw
 from metrics.grader import Grader
 from methods.diffusion.diff_model import LatentDiffusionUNet
+from methods.flow.flow_model import LatentFlowUNet
 from torchvision import transforms
 
 
@@ -25,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--steps", type=int, default=30)
     parser.add_argument("--guidance-scale", type=float, default=7.5)
+    parser.add_argument("--recon-guidance-scale", type=float, default=0.0)
     parser.add_argument("--image-guidance-scale", type=float, default=1.5)
     return parser.parse_args()
 
@@ -94,7 +96,11 @@ def main() -> None:
         pipe = LatentDiffusionUNet(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
         pipe = pipe.to(device)
         pipe.eval()
-
+    elif args.model_id == "flow":
+        pipe = LatentFlowUNet(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
+        pipe = pipe.to(device)
+        pipe.eval()
+        
     grader = Grader()
     rows = pick_samples(read_metadata(metadata_path), args.num_samples, args.seed)
     results = []
@@ -120,12 +126,22 @@ def main() -> None:
             ).images[0]
             output = transforms.ToTensor()(output).unsqueeze(0).to(device)
         elif args.model_id == "diffusion":
-            source = source * 2.0 - 1.0
             output = pipe.sample(
-                source_images=source,
+                source_images=source * 2.0 - 1.0,
                 prompts=[prompt],
                 num_inference_steps=args.steps,
                 text_guidance_scale=args.guidance_scale,
+                recon_guidance_scale=args.recon_guidance_scale,
+            )
+            output = output.detach().cpu().clamp(-1, 1)
+            output = (output + 1.0) / 2.0
+        elif args.model_id == "flow":
+            output = pipe.sample(
+                source_images=source * 2.0 - 1.0,
+                prompts=[prompt],
+                num_inference_steps=args.steps,
+                text_guidance_scale=args.guidance_scale,
+                recon_guidance_scale=args.recon_guidance_scale,
             )
             output = output.detach().cpu().clamp(-1, 1)
             output = (output + 1.0) / 2.0
