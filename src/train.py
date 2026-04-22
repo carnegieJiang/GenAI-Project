@@ -320,9 +320,7 @@ def save_checkpoint(
     payload = {
         "global_step": global_step,
         "epoch": epoch,
-        "unet": model.unet.state_dict(),
-        "text_encoder": model.text_encoder.state_dict(),
-        "vae": model.vae.state_dict(),
+        "model_state_dict": model.state_dict(),
         "optimizer": optimizer.state_dict(),
     }
     torch.save(payload, path)

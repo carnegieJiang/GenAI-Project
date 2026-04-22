@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
         default="/home/ec2-user/GenAI-Project/data/stylebooth_subset",
         help="Directory where the subset metadata will be written.",
     )
-    parser.add_argument("--max-samples", type=int, default=2000, help="Maximum number of rows to keep.")
+    parser.add_argument("--max-samples", type=int, default=12000, help="Maximum number of rows to keep.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducible sampling.")
     parser.add_argument(
         "--copy-images",
