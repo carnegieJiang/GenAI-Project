@@ -15,8 +15,8 @@ from tqdm import tqdm
 
 from torchvision import transforms
 
-from methods.diffusion.diff_model import LatentDiffusionUNet, get_opt
-from methods.flow.flow_model import LatentFlowUNet
+from methods.diff_model import LatentDiffusionModel, get_opt
+from methods.flow_model import LatentFlowModel
 from dataset.dataset import make_dataloader
 import wandb 
 
@@ -82,6 +82,7 @@ class TrainConfig:
     text_guidance_scale: float = 7.5
     reconstruction_guidance_scale: float = 0.0
     use_t5: bool = False
+    use_dit: bool = False
     t_scaler: float = 999.0
     model_type: str = "diffusion"  # "diffusion" or "flow
 
@@ -126,18 +127,20 @@ def train(cfg: TrainConfig):
     )
 
     if cfg.model_type == "diffusion":
-        model = LatentDiffusionUNet(
+        model = LatentDiffusionModel(
             prompt_dropout_prob=cfg.prompt_dropout_prob,
             freeze_vae=cfg.freeze_vae,
             freeze_text=cfg.freeze_text_encoder,
             use_t5=cfg.use_t5,
+            use_dit=cfg.use_dit,
         )
     elif cfg.model_type == "flow":
-        model = LatentFlowUNet(
+        model = LatentFlowModel(
             prompt_dropout_prob=cfg.prompt_dropout_prob,
             freeze_vae=cfg.freeze_vae,
             freeze_text=cfg.freeze_text_encoder,
             use_t5=cfg.use_t5,
+            use_dit=cfg.use_dit,
             t_scaler=cfg.t_scaler   
         )
     model.to(device)
@@ -258,7 +261,7 @@ def train(cfg: TrainConfig):
 
 @torch.no_grad()
 def run_validation_samples(
-    model: LatentDiffusionUNet | LatentFlowUNet,
+    model: LatentDiffusionModel | LatentFlowModel,
     loader: DataLoader,
     device: torch.device,
     save_dir: str,
@@ -303,7 +306,7 @@ def run_validation_samples(
 
 
 def save_checkpoint(
-    model: LatentDiffusionUNet,
+    model: LatentDiffusionModel|LatentFlowModel,
     optimizer: torch.optim.Optimizer,
     global_step: int,
     epoch: int,
@@ -357,6 +360,7 @@ def parse_args():
     parser.add_argument("--text_guidance_scale", type=float, default=7.5)
     parser.add_argument("--reconstruction_guidance_scale", type=float, default=0.0)
     parser.add_argument("--use_t5", action="store_true")
+    parser.add_argument("--use_dit", action="store_true")
     parser.add_argument("--t_scaler", type=float, default=999.0)
     parser.add_argument("--model_type", type=str, default="diffusion", choices=["diffusion", "flow"])
 
@@ -384,6 +388,7 @@ def parse_args():
         text_guidance_scale=args.text_guidance_scale,
         reconstruction_guidance_scale=args.reconstruction_guidance_scale,
         use_t5=args.use_t5,
+        use_dit=args.use_dit,
         t_scaler=args.t_scaler,
         model_type=args.model_type
     )

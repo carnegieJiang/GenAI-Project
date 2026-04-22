@@ -10,8 +10,8 @@ import torch
 from diffusers import StableDiffusionInstructPix2PixPipeline
 from PIL import Image, ImageDraw
 from metrics.grader import Grader
-from methods.diffusion.diff_model import LatentDiffusionUNet
-from methods.flow.flow_model import LatentFlowUNet
+from methods.diff_model import LatentDiffusionModel
+from methods.flow_model import LatentFlowModel
 from torchvision import transforms
 
 
@@ -93,11 +93,11 @@ def main() -> None:
         pipe = pipe.to(device)
         pipe.set_progress_bar_config(disable=True)
     elif args.model_id == "diffusion":
-        pipe = LatentDiffusionUNet(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
+        pipe = LatentDiffusionModel(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
         pipe = pipe.to(device)
         pipe.eval()
     elif args.model_id == "flow":
-        pipe = LatentFlowUNet(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
+        pipe = LatentFlowModel(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
         pipe = pipe.to(device)
         pipe.eval()
         

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler
 from transformers import CLIPTokenizer, CLIPTextModel
 from transformers import T5Tokenizer, T5EncoderModel
+from .dit_model import LatentDiT
 
 def prompt_dropout(prompts, drop=0.1):
     new_prompts = []
@@ -15,7 +16,7 @@ def prompt_dropout(prompts, drop=0.1):
             new_prompts.append(p)
     return new_prompts
 
-class LatentDiffusionUNet(nn.Module):
+class LatentDiffusionModel(nn.Module):
     """
     Encode image -> latent with Stable Diffusion VAE,
     condition a latent-space U-Net on text embeddings,
@@ -33,6 +34,7 @@ class LatentDiffusionUNet(nn.Module):
         freeze_vae: bool = False,
         freeze_text: bool = False,
         use_t5: bool = False,
+        use_dit: bool = False,
         prompt_dropout_prob: float = 0.1,
         from_pretrained = None, 
     ):
@@ -40,32 +42,45 @@ class LatentDiffusionUNet(nn.Module):
 
         # VAE: image <-> latent
         self.vae = AutoencoderKL.from_pretrained(vae_name, subfolder="vae")
+        
+        if use_dit:
+            self.dit = LatentDiT(
+                input_size=64,
+                patch_size=2,
+                in_channels=8,
+                out_channels=4,
+                hidden_size=512,
+                depth=8,
+                num_heads=8,
+                mlp_ratio=4.0,
+                text_dim=768,
+            )
+        else:
+            # UNet: latent denoiser
+            base_unet = UNet2DConditionModel.from_pretrained(unet_name, subfolder="unet")
 
-        # UNet: latent denoiser
-        base_unet = UNet2DConditionModel.from_pretrained(unet_name, subfolder="unet")
+            config = dict(base_unet.config)
+            config["in_channels"] = 8
 
-        config = dict(base_unet.config)
-        config["in_channels"] = 8
+            self.unet = UNet2DConditionModel(**config)
 
-        self.unet = UNet2DConditionModel(**config)
+            # load all compatible weights except conv_in.weight
+            state_dict = base_unet.state_dict()
+            old_conv_in_weight = state_dict.pop("conv_in.weight")
+            old_conv_in_bias = state_dict.get("conv_in.bias", None)
+            
+            missing, unexpected = self.unet.load_state_dict(state_dict, strict=False)
+            print("Missing keys:", missing)
+            print("Unexpected keys:", unexpected)
 
-        # load all compatible weights except conv_in.weight
-        state_dict = base_unet.state_dict()
-        old_conv_in_weight = state_dict.pop("conv_in.weight")
-        old_conv_in_bias = state_dict.get("conv_in.bias", None)
+            # manually initialize new 8-channel conv_in
+            with torch.no_grad():
+                self.unet.conv_in.weight.zero_()                     # [320, 8, 3, 3]
+                self.unet.conv_in.weight[:, :4, :, :] = old_conv_in_weight
+                # extra 4 channels stay zero
 
-        missing, unexpected = self.unet.load_state_dict(state_dict, strict=False)
-        print("Missing keys:", missing)
-        print("Unexpected keys:", unexpected)
-
-        # manually initialize new 8-channel conv_in
-        with torch.no_grad():
-            self.unet.conv_in.weight.zero_()                     # [320, 8, 3, 3]
-            self.unet.conv_in.weight[:, :4, :, :] = old_conv_in_weight
-            # extra 4 channels stay zero
-
-            if old_conv_in_bias is not None:
-                self.unet.conv_in.bias.copy_(old_conv_in_bias)
+                if old_conv_in_bias is not None:
+                    self.unet.conv_in.bias.copy_(old_conv_in_bias)
 
         # Text encoder + tokenizer
         if use_t5:
@@ -91,6 +106,8 @@ class LatentDiffusionUNet(nn.Module):
         
         self.freeze_vae = freeze_vae
         self.freeze_text = freeze_text
+        self.use_t5 = use_t5
+        self.use_dit = use_dit
 
         if freeze_vae:
             for p in self.vae.parameters():
@@ -136,14 +153,15 @@ class LatentDiffusionUNet(nn.Module):
             max_length=self.tokenizer.model_max_length,
             return_tensors="pt",
         )
-        input_ids = tokens.input_ids.to(next(self.parameters()).device)
-        attention_mask = tokens.attention_mask.to(next(self.parameters()).device)
+        device = next(self.parameters()).device
+        input_ids = tokens.input_ids.to(device)
+        attention_mask = tokens.attention_mask.to(device)
 
         text_outputs = self.text_encoder(
             input_ids=input_ids,
             attention_mask=attention_mask
         )
-        return text_outputs.last_hidden_state
+        return text_outputs.last_hidden_state, attention_mask
 
     def forward(self, source_images, target_images, prompts):
         device = source_images.device
@@ -154,11 +172,11 @@ class LatentDiffusionUNet(nn.Module):
             with torch.no_grad():
                 source_latents = self.encode_image(source_images)
                 target_latents = self.encode_image(target_images)
-                prompt_embeds = self.encode_prompt(dropped_prompts)
+                prompt_embeds, attn_mask = self.encode_prompt(dropped_prompts)
         else:
             source_latents = self.encode_image(source_images)
             target_latents = self.encode_image(target_images)
-            prompt_embeds = self.encode_prompt(dropped_prompts)
+            prompt_embeds, attn_mask = self.encode_prompt(dropped_prompts)
 
         timesteps = torch.randint(
             0,
@@ -170,14 +188,21 @@ class LatentDiffusionUNet(nn.Module):
 
         noise = torch.randn_like(target_latents)
         noisy_target_latents = self.noise_scheduler.add_noise(target_latents, noise, timesteps)
-
         model_input = torch.cat([noisy_target_latents, source_latents], dim=1)
-
-        noise_pred = self.unet(
-            sample=model_input,
-            timestep=timesteps,
-            encoder_hidden_states=prompt_embeds,
-        ).sample
+        
+        if self.use_dit:
+            noise_pred = self.dit(
+                x=model_input,
+                timesteps=timesteps,
+                prompt_embeds=prompt_embeds,
+                attention_mask=attn_mask,
+            )
+        else:
+            noise_pred = self.unet(
+                sample=model_input,
+                timestep=timesteps,
+                encoder_hidden_states=prompt_embeds,
+            ).sample
 
         return {"pred_noise": noise_pred, "target_noise": noise}
 
@@ -206,53 +231,14 @@ class LatentDiffusionUNet(nn.Module):
         guided_noise = noise_pred - recon_guidance_scale * grad
         return guided_noise
 
-    # @torch.no_grad()
-    # def sample(self, source_images: torch.Tensor, prompts: list[str], strength=0.6, num_inference_steps=50, text_guidance_scale=7.5, image_guidance_scale=1.0):
-
-    #     device = source_images.device
-    #     batch_size = source_images.shape[0]
-
-    #     prompt_embeds = self.encode_prompt(prompts).to(device)
-    #     uncond_embeds = self.encode_prompt([""] * batch_size).to(device)
-
-    #     init_latents = self.encode_image(source_images)
-
-    #     self.noise_scheduler.set_timesteps(num_inference_steps, device=device)
-
-    #     init_timestep = int(num_inference_steps * strength)
-    #     init_timestep = min(init_timestep, num_inference_steps)
-    #     t_start_index = max(num_inference_steps - init_timestep, 0)
-
-    #     timestep = self.noise_scheduler.timesteps[t_start_index]
-    #     noise = torch.randn_like(init_latents)
-
-    #     latents = self.noise_scheduler.add_noise(init_latents, noise, timestep)
-
-    #     for t in self.noise_scheduler.timesteps[t_start_index:]:
-    #         latent_model_input = torch.cat([latents, latents], dim=0)
-    #         text_input = torch.cat([uncond_embeds, prompt_embeds], dim=0)
-
-    #         noise_pred = self.unet(
-    #             sample=latent_model_input,
-    #             timestep=t,
-    #             encoder_hidden_states=text_input,
-    #         ).sample
-
-    #         noise_uncond, noise_text = noise_pred.chunk(2)
-    #         noise_pred = noise_uncond + text_guidance_scale * (noise_text - noise_uncond)
-
-    #         latents = self.noise_scheduler.step(noise_pred, t, latents).prev_sample
-
-    #     edited = self.decode_latent(latents)
-    #     return edited
 
     @torch.no_grad()
     def sample(self, source_images, prompts, strength=1.0, num_inference_steps=50, text_guidance_scale=7.5, recon_guidance_scale=0.0):
         device = source_images.device
         batch_size = source_images.shape[0]
 
-        prompt_embeds = self.encode_prompt(prompts)
-        uncond_embeds = self.encode_prompt([""] * batch_size)
+        prompt_embeds, attn_mask = self.encode_prompt(prompts)
+        uncond_embeds, attn_mask_uncond = self.encode_prompt([""] * batch_size)
 
         source_latents = self.encode_image(source_images)
 
@@ -269,14 +255,22 @@ class LatentDiffusionUNet(nn.Module):
         for t in self.noise_scheduler.timesteps[t_start_index:]:
             latent_model_input = torch.cat([latents, latents], dim=0)
             source_model_input = torch.cat([source_latents, source_latents], dim=0)
-            unet_input = torch.cat([latent_model_input, source_model_input], dim=1)
+            input = torch.cat([latent_model_input, source_model_input], dim=1)
             text_input = torch.cat([uncond_embeds, prompt_embeds], dim=0)
-
-            noise_pred = self.unet(
-                sample=unet_input,
-                timestep=t,
-                encoder_hidden_states=text_input,
-            ).sample
+            attn_mask_input = torch.cat([attn_mask_uncond, attn_mask], dim=0)
+            if self.use_dit:
+                noise_pred = self.dit(
+                    x=input,
+                    timesteps=t,
+                    prompt_embeds=text_input,
+                    attention_mask=attn_mask_input,
+                )
+            else:
+                noise_pred = self.unet(
+                    sample=input,
+                    timestep=t,
+                    encoder_hidden_states=text_input,
+                ).sample
 
             noise_uncond, noise_text = noise_pred.chunk(2)
             noise_pred = noise_uncond + text_guidance_scale * (noise_text - noise_uncond)
