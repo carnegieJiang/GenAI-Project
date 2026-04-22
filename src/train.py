@@ -17,6 +17,8 @@ from torchvision import transforms
 
 from methods.diff_model import LatentDiffusionModel, get_opt
 from methods.flow_model import LatentFlowModel
+from methods.decouple_model import LatentDecoupleModel
+from methods.loss_model import DINOContentLoss, CLIPStyleLoss
 from dataset.dataset import make_dataloader
 import wandb 
 
@@ -83,8 +85,13 @@ class TrainConfig:
     reconstruction_guidance_scale: float = 0.0
     use_t5: bool = False
     use_dit: bool = False
+    use_advanced_loss: bool = False
     t_scaler: float = 999.0
-    model_type: str = "diffusion"  # "diffusion" or "flow
+    style_strength: float = 1.0
+    model_type: str = "diffusion"  # "diffusion" or "flow" or "decouple"
+    recon_loss_scale: float = 1.0
+    style_loss_scale: float = 1.0
+    ortho_loss_scale: float = 0.1
 
 
 def get_dtype(mixed_precision: str):
@@ -93,6 +100,16 @@ def get_dtype(mixed_precision: str):
     if mixed_precision == "bf16":
         return torch.bfloat16
     return torch.float32
+
+def orthogonality_loss(vc, vs, eps=1e-8):
+    vc_flat = vc.flatten(1)
+    vs_flat = vs.flatten(1)
+
+    vc_norm = vc_flat / (vc_flat.norm(dim=1, keepdim=True) + eps)
+    vs_norm = vs_flat / (vs_flat.norm(dim=1, keepdim=True) + eps)
+
+    cosine = (vc_norm * vs_norm).sum(dim=1)
+    return (cosine ** 2).mean()
 
 
 def train(cfg: TrainConfig):
@@ -106,6 +123,13 @@ def train(cfg: TrainConfig):
             entity="genAIteam",
             project="method2_flow", 
             config=cfg.__dict__)
+    elif cfg.model_type == "decouple":
+        wandb.init(
+            entity="genAIteam",
+            project="method3_decouple", 
+            config=cfg.__dict__)
+    else:
+        raise ValueError(f"Unsupported model type: {cfg.model_type}")
         
     os.makedirs(cfg.output_dir, exist_ok=True)
     sample_dir = os.path.join(cfg.output_dir, "samples")
@@ -143,9 +167,22 @@ def train(cfg: TrainConfig):
             use_dit=cfg.use_dit,
             t_scaler=cfg.t_scaler   
         )
+    elif cfg.model_type == "decouple":
+        model = LatentDecoupleModel(
+            prompt_dropout_prob=cfg.prompt_dropout_prob,
+            freeze_vae=cfg.freeze_vae,
+            freeze_text=cfg.freeze_text_encoder,
+            use_t5=cfg.use_t5,
+            use_dit=cfg.use_dit,
+            t_scaler=cfg.t_scaler,
+            style_strength=cfg.style_strength
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {cfg.model_type}")
     model.to(device)
     criterion, optimizer, scheduler = get_opt(model, lr=cfg.lr, weight_decay=cfg.weight_decay, scheduler_T_max=-1)
-
+    dino_loss = DINOContentLoss().to(device) if cfg.model_type in ["decouple"] else None 
+    clip_loss = CLIPStyleLoss().to(device) if cfg.model_type in ["decouple"] else None
     global_step = 0
     use_amp = device.type == "cuda" and cfg.mixed_precision in ["fp16", "bf16"]
     amp_dtype = get_dtype(cfg.mixed_precision)
@@ -172,6 +209,22 @@ def train(cfg: TrainConfig):
                 loss = criterion(outputs["pred_noise"], outputs["target_noise"]) / cfg.grad_accum_steps
             elif cfg.model_type == "flow":
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
+            elif cfg.model_type == "decouple":
+                loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
+                if cfg.use_advanced_loss:
+                    recon_guidance = dino_loss.compute_dino_recon_guidance(
+                        pred_images=model.decode_latents(outputs["source_latents"] + outputs["pred_velocity"]),
+                        ref_images=batch["source_images"],
+                    )
+                    style_guidance = clip_loss.compute_clip_style_guidance(
+                        images=model.decode_latents(outputs["source_latents"] + outputs["style_velocity"]),
+                        prompts=batch["prompts"],
+                    )
+                    ortho_loss = orthogonality_loss(outputs["content_velocity"], outputs["style_velocity"])
+                    loss += cfg.recon_loss_scale * recon_guidance
+                    loss += cfg.style_loss_scale * style_guidance
+                    loss += cfg.ortho_loss_scale * ortho_loss
+
             running_loss += loss.item()
             smooth_loss += loss.item()
 
@@ -222,16 +275,6 @@ def train(cfg: TrainConfig):
                         save_dir=ckpt_dir,
                     )
 
-        # Save each epoch
-        # save_checkpoint(
-        #     model=model,
-        #     optimizer=optimizer,
-        #     global_step=global_step,
-        #     epoch=epoch,
-        #     save_dir=ckpt_dir,
-        #     tag=f"epoch_{epoch+1}",
-        # )
-
         # End-of-epoch samples
         run_validation_samples(
             model=model,
@@ -242,18 +285,6 @@ def train(cfg: TrainConfig):
             max_images=cfg.num_sample_images,
         )
 
-    # final_unet_dir = os.path.join(cfg.output_dir, "final_unet")
-    # model.unet.save_pretrained(final_unet_dir)
-    # print(f"Saved final U-Net to: {final_unet_dir}")
-
-    # final_text_encoder_dir = os.path.join(cfg.output_dir, "final_text_encoder")
-    # model.text_encoder.save_pretrained(final_text_encoder_dir)
-    # print(f"Saved final text encoder to: {final_text_encoder_dir}")
-
-    # final_vae_dir = os.path.join(cfg.output_dir, "final_vae")
-    # model.vae.save_pretrained(final_vae_dir)
-    # print(f"Saved final VAE to: {final_vae_dir}")
-
     final_model_dir = os.path.join(cfg.output_dir)
     torch.save(model.state_dict(), os.path.join(final_model_dir, "final_model.pt"))
     print(f"Saved final model state dict to: {final_model_dir}/final_model.pt")
@@ -261,7 +292,7 @@ def train(cfg: TrainConfig):
 
 @torch.no_grad()
 def run_validation_samples(
-    model: LatentDiffusionModel | LatentFlowModel,
+    model: LatentDiffusionModel | LatentFlowModel | LatentDecoupleModel,
     loader: DataLoader,
     device: torch.device,
     save_dir: str,
@@ -306,7 +337,7 @@ def run_validation_samples(
 
 
 def save_checkpoint(
-    model: LatentDiffusionModel|LatentFlowModel,
+    model: LatentDiffusionModel | LatentFlowModel | LatentDecoupleModel,
     optimizer: torch.optim.Optimizer,
     global_step: int,
     epoch: int,
@@ -360,7 +391,12 @@ def parse_args():
     parser.add_argument("--use_t5", action="store_true")
     parser.add_argument("--use_dit", action="store_true")
     parser.add_argument("--t_scaler", type=float, default=999.0)
-    parser.add_argument("--model_type", type=str, default="diffusion", choices=["diffusion", "flow"])
+    parser.add_argument("--style_strength", type=float, default=1.0)
+    parser.add_argument("--model_type", type=str, default="diffusion", choices=["diffusion", "flow", "decouple"])
+    parser.add_argument("--use_advanced_loss", action="store_true")
+    parser.add_argument("--recon_loss_scale", type=float, default=1.0)
+    parser.add_argument("--style_loss_scale", type=float, default=1.0)
+    parser.add_argument("--ortho_loss_scale", type=float, default=0.1)
 
     args = parser.parse_args()
 
@@ -388,7 +424,12 @@ def parse_args():
         use_t5=args.use_t5,
         use_dit=args.use_dit,
         t_scaler=args.t_scaler,
+        style_strength=args.style_strength,
         model_type=args.model_type
+        use_advanced_loss=args.use_advanced_loss,
+        recon_loss_scale=args.recon_loss_scale,
+        style_loss_scale=args.style_loss_scale,
+        ortho_loss_scale=args.ortho_loss_scale
     )
     return cfg
 

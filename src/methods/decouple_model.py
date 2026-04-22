@@ -3,12 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from diffusers import AutoencoderKL, UNet2DConditionModel
-import timm
-from torchvision import transforms
 from transformers import CLIPTokenizer, CLIPTextModel
 from transformers import T5Tokenizer, T5EncoderModel
 from .dit_model import LatentDiT
-from .loss_model import DINOContentLoss, CLIPStyleLoss
+from .loss_model import DINOContentLoss
 
 
 def prompt_dropout(prompts, drop=0.1):
@@ -268,7 +266,7 @@ class LatentFlowDecoupledModel(nn.Module):
             attention_mask=attn_mask if self.use_dit else None,
         )
         
-        return {"pred_velocity": pred_velocity, "target_velocity": target_velocity, "style_velocity": pred_vs, "content_velocity": pred_vc}
+        return {"pred_velocity": pred_velocity, "target_velocity": target_velocity, "style_velocity": pred_vs, "content_velocity": pred_vc, "source_latents": z0}
 
 
     def compute_dino_recon_guidance(
