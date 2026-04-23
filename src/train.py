@@ -212,12 +212,12 @@ def train(cfg: TrainConfig):
             elif cfg.model_type == "decouple":
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
                 if cfg.use_advanced_loss:
-                    recon_guidance = dino_loss.compute_dino_recon_guidance(
-                        pred_images=model.decode_latents(outputs["source_latents"] + outputs["content_velocity"]),
+                    recon_guidance = dino_loss(
+                        pred_images=model.decode_latent(outputs["source_latents"] + outputs["content_velocity"]),
                         ref_images=batch["source_images"],
                     )
-                    style_guidance = clip_loss.compute_clip_style_guidance(
-                        images=model.decode_latents(outputs["source_latents"] + outputs["style_velocity"]),
+                    style_guidance = clip_loss(
+                        pred_images=model.decode_latent(outputs["source_latents"] + outputs["style_velocity"]),
                         prompts=batch["prompts"],
                     )
                     ortho_loss = orthogonality_loss(outputs["content_velocity"], outputs["style_velocity"])
