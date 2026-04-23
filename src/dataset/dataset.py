@@ -1,10 +1,10 @@
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 
@@ -35,10 +35,14 @@ def _load_rows(metadata_path: Path) -> List[Dict[str, Any]]:
 
 
 class StyleTransferDataset(Dataset):
-    def __init__(self, metadata_path: str, image_size: int = 256) -> None:
+    def __init__(self, metadata_path: str, image_size: int = 256, split: Optional[str] = None) -> None:
         self.metadata_path = Path(metadata_path).resolve()
         self.root_dir = self.metadata_path.parent
-        self.rows = _load_rows(self.metadata_path)
+        all_rows = _load_rows(self.metadata_path)
+        if split is None:
+            self.rows = all_rows
+        else:
+            self.rows = [row for row in all_rows if row.get("split", "train") == split]
 
         self.transform = transforms.Compose(
             [
@@ -76,21 +80,37 @@ def make_dataloader(
     batch_size: int = 8,
     shuffle: bool = True,
     num_workers: int = 0,
-    num_imgs: int = 2,
     collate_fn=None,
-) -> DataLoader:
-    dataset = StyleTransferDataset(metadata_path=metadata_path, image_size=image_size)
-    val_indices = list(range(min(num_imgs, len(dataset))))
-    val_dataset = Subset(dataset, val_indices)
+) -> tuple[DataLoader, DataLoader]:
+    train_dataset = StyleTransferDataset(metadata_path=metadata_path, image_size=image_size, split="train")
+    val_dataset = StyleTransferDataset(metadata_path=metadata_path, image_size=image_size, split="val")
+
     return DataLoader(
-        dataset,
+        train_dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         collate_fn=collate_fn,
     ), DataLoader(
         val_dataset,
-        batch_size=num_imgs,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        collate_fn=collate_fn,
+    )
+
+
+def make_test_dataloader(
+    metadata_path: str,
+    image_size: int = 256,
+    batch_size: int = 8,
+    num_workers: int = 0,
+    collate_fn=None,
+) -> DataLoader:
+    test_dataset = StyleTransferDataset(metadata_path=metadata_path, image_size=image_size, split="test")
+    return DataLoader(
+        test_dataset,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         collate_fn=collate_fn,
