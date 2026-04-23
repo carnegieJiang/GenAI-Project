@@ -213,7 +213,7 @@ def train(cfg: TrainConfig):
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
                 if cfg.use_advanced_loss:
                     recon_guidance = dino_loss.compute_dino_recon_guidance(
-                        pred_images=model.decode_latents(outputs["source_latents"] + outputs["pred_velocity"]),
+                        pred_images=model.decode_latents(outputs["source_latents"] + outputs["content_velocity"]),
                         ref_images=batch["source_images"],
                     )
                     style_guidance = clip_loss.compute_clip_style_guidance(
@@ -425,7 +425,7 @@ def parse_args():
         use_dit=args.use_dit,
         t_scaler=args.t_scaler,
         style_strength=args.style_strength,
-        model_type=args.model_type
+        model_type=args.model_type,
         use_advanced_loss=args.use_advanced_loss,
         recon_loss_scale=args.recon_loss_scale,
         style_loss_scale=args.style_loss_scale,

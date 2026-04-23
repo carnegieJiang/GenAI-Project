@@ -255,19 +255,19 @@ class LatentDiffusionModel(nn.Module):
         for t in self.noise_scheduler.timesteps[t_start_index:]:
             latent_model_input = torch.cat([latents, latents], dim=0)
             source_model_input = torch.cat([source_latents, source_latents], dim=0)
-            input = torch.cat([latent_model_input, source_model_input], dim=1)
+            model_input = torch.cat([latent_model_input, source_model_input], dim=1)
             text_input = torch.cat([uncond_embeds, prompt_embeds], dim=0)
             attn_mask_input = torch.cat([attn_mask_uncond, attn_mask], dim=0)
             if self.use_dit:
                 noise_pred = self.dit(
-                    x=input,
+                    x=model_input,
                     timesteps=t,
                     prompt_embeds=text_input,
                     attention_mask=attn_mask_input,
                 )
             else:
                 noise_pred = self.unet(
-                    sample=input,
+                    sample=model_input,
                     timestep=t,
                     encoder_hidden_states=text_input,
                 ).sample

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler
+from diffusers import AutoencoderKL, UNet2DConditionModel
 from transformers import CLIPTokenizer, CLIPTextModel
 from transformers import T5Tokenizer, T5EncoderModel
 from .dit_model import LatentDiT
@@ -209,9 +209,6 @@ class LatentFlowModel(nn.Module):
         feat_src,
         recon_guidance_scale,
     ):
-        if self.dino_loss is None:
-            self.dino_loss = DINOContentLoss()
-            
         latents_for_grad = latents.detach().requires_grad_(True)
         decoded = self.decode_latent(latents_for_grad)   # in roughly [-1, 1]
         feat_cur = self.dino_loss.features(decoded)
@@ -238,6 +235,8 @@ class LatentFlowModel(nn.Module):
 
         dt = 1.0 / num_inference_steps
         if recon_guidance_scale > 0:
+            if self.dino_loss is None:
+                self.dino_loss = DINOContentLoss().to(device)
             with torch.no_grad():
                 source_dino_feats = self.dino_loss.features(source_images)
 

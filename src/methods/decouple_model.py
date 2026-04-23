@@ -20,41 +20,60 @@ def prompt_dropout(prompts, drop=0.1):
 
 
 class ConvHead(nn.Module):
-    """
-    Simple velocity head for UNet features.
-    Expects [B, C, H, W] -> [B, 4, H, W]
-    """
-    def __init__(self, in_channels, out_channels=4):
+    def __init__(self, in_channels, hidden_channels=64, out_channels=4):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels, hidden_channels, kernel_size=3, padding=1),
             nn.SiLU(),
+            nn.Conv2d(hidden_channels, out_channels, kernel_size=3, padding=1),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+
+class PromptSpatialProjector(nn.Module):
+    """
+    Project pooled prompt embedding [B, D] to a spatial feature map [B, C, H, W].
+    """
+    def __init__(self, text_dim=768, out_channels=32):
+        super().__init__()
+        self.proj = nn.Sequential(
+            nn.Linear(text_dim, 256),
+            nn.SiLU(),
+            nn.Linear(256, out_channels),
+        )
+
+    def forward(self, prompt_embeds, H, W, attention_mask=None):
+        # prompt_embeds: [B, L, D]
+        if attention_mask is None:
+            pooled = prompt_embeds.mean(dim=1)
+        else:
+            mask = attention_mask.unsqueeze(-1).float()
+            pooled = (prompt_embeds * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1.0)
+
+        vec = self.proj(pooled)                      # [B, C]
+        return vec[:, :, None, None].expand(-1, -1, H, W)  # [B, C, H, W]
+
+
+class SourceLatentProjector(nn.Module):
+    """
+    Project source latent [B, 4, H, W] to content-side feature channels.
+    """
+    def __init__(self, in_channels=4, out_channels=32):
+        super().__init__()
+        self.net = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-
-class TokenHead(nn.Module):
-    """
-    Head for DiT token outputs.
-    Expects final latent/image-space prediction already in [B, 4, H, W] shape.
-    Uses a small conv refinement head.
-    """
-    def __init__(self, in_channels=4, out_channels=4):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=3, padding=1),
             nn.SiLU(),
-            nn.Conv2d(64, out_channels, kernel_size=3, padding=1),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
         )
 
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, z0):
+        return self.net(z0)
 
 
-class LatentFlowDecoupledModel(nn.Module):
+class LatentDecoupleModel(nn.Module):
     """
     Flow model with explicit content/style separation.
 
@@ -112,8 +131,7 @@ class LatentFlowDecoupledModel(nn.Module):
                 mlp_ratio=4.0,
                 text_dim=768,
             )
-            self.content_head = TokenHead(in_channels=4, out_channels=4)
-            self.style_head = TokenHead(in_channels=4, out_channels=4)
+            shared_channels = 4
         else:
             base_unet = UNet2DConditionModel.from_pretrained(unet_name, subfolder="unet")
             config = dict(base_unet.config)
@@ -137,21 +155,31 @@ class LatentFlowDecoupledModel(nn.Module):
 
             # For SD1.5 UNet base channels are usually 4->320 at input stem.
             backbone_feature_channels = self.unet.config.block_out_channels[0]
-            self.content_head = ConvHead(backbone_feature_channels, out_channels=4)
-            self.style_head = ConvHead(backbone_feature_channels, out_channels=4)
 
             # Replace the original output head usage by extracting hidden features manually
             # We will use conv_in + time/text conditioned UNet path via backbone, then read sample output
             # and treat it as shared feature map after an adapter.
             self.shared_adapter = nn.Conv2d(4, backbone_feature_channels, kernel_size=3, padding=1)
+            shared_channels = backbone_feature_channels
 
         # Text encoder + tokenizer
         if use_t5:
             self.tokenizer = T5Tokenizer.from_pretrained(text_name)
             self.text_encoder = T5EncoderModel.from_pretrained(text_name)
+            text_dim = self.text_encoder.config.d_model
         else:
             self.tokenizer = CLIPTokenizer.from_pretrained(text_name)
-            self.text_encoder = CLIPTextModel.from_pretrained(text_name)
+            self.text_encoder = CLIPTextModel.from_pretrained(text_name) 
+            text_dim = self.text_encoder.config.hidden_size
+
+        condition_dim = 32
+        # branch-specific side inputs
+        self.content_source_proj = SourceLatentProjector(in_channels=4, out_channels=condition_dim)
+        self.style_prompt_proj = PromptSpatialProjector(text_dim=text_dim, out_channels=condition_dim)
+
+        # branch heads now see different inputs
+        self.content_head = ConvHead(in_channels=shared_channels + condition_dim, hidden_channels=64, out_channels=4)
+        self.style_head = ConvHead(in_channels=shared_channels + condition_dim, hidden_channels=64, out_channels=4)
 
 
         if freeze_vae:
@@ -220,17 +248,34 @@ class LatentFlowDecoupledModel(nn.Module):
             shared = self.shared_adapter(shared)  # [B, C, H, W]
             return shared
 
-    def predict_velocity_components(self, model_input, timesteps, prompt_embeds, attention_mask=None):
+    def predict_velocity_components(self, model_input, source_latents, timesteps, prompt_embeds, attention_mask=None):
         shared = self.backbone_features(
             model_input=model_input,
             timesteps=timesteps,
             prompt_embeds=prompt_embeds,
             attention_mask=attention_mask,
-        )
-        v_content = self.content_head(shared)
-        v_style = self.style_head(shared)
+        )   # [B, 4, H, W]
+
+        B, _, H, W = shared.shape
+
+        # content branch gets explicit source-latent features
+        source_feat = self.content_source_proj(source_latents)          # [B, 32, H, W]
+        content_input = torch.cat([shared, source_feat], dim=1)
+        v_content = self.content_head(content_input)
+
+        # style branch gets explicit prompt-spatial features
+        prompt_feat = self.style_prompt_proj(
+            prompt_embeds,
+            H=H,
+            W=W,
+            attention_mask=attention_mask,
+        )   # [B, 32, H, W]
+        style_input = torch.cat([shared, prompt_feat], dim=1)
+        v_style = self.style_head(style_input)
+
         v_total = v_content + self.style_strength * v_style
         return v_total, v_content, v_style
+
     
 
     def forward(self, source_images, target_images, prompts):
@@ -261,12 +306,14 @@ class LatentFlowDecoupledModel(nn.Module):
 
         pred_velocity, pred_vc, pred_vs = self.predict_velocity_components(
             model_input=model_input,
+            source_latents=source_latents,
             timesteps=time_input,
             prompt_embeds=prompt_embeds,
             attention_mask=attn_mask if self.use_dit else None,
         )
         
-        return {"pred_velocity": pred_velocity, "target_velocity": target_velocity, "style_velocity": pred_vs, "content_velocity": pred_vc, "source_latents": z0}
+        
+        return {"pred_velocity": pred_velocity, "target_velocity": target_velocity, "style_velocity": pred_vs*self.style_strength, "content_velocity": pred_vc, "source_latents": z0}
 
 
     def compute_dino_recon_guidance(
@@ -276,8 +323,6 @@ class LatentFlowDecoupledModel(nn.Module):
         feat_src,
         recon_guidance_scale,
     ):
-        if self.dino_loss is None:
-            self.dino_loss = DINOContentLoss()
             
         latents_for_grad = latents.detach().requires_grad_(True)
         decoded = self.decode_latent(latents_for_grad)   # in roughly [-1, 1]
@@ -320,6 +365,8 @@ class LatentFlowDecoupledModel(nn.Module):
         dt = 1.0 / num_inference_steps
 
         if recon_guidance_scale > 0:
+            if self.dino_loss is None:
+                self.dino_loss = DINOContentLoss().to(device)
             with torch.no_grad():
                 source_dino_feats = self.dino_loss.features(source_images)
 
@@ -337,19 +384,17 @@ class LatentFlowDecoupledModel(nn.Module):
                 timesteps=t_input,
                 prompt_embeds=text_input,
                 attention_mask=mask_input if self.use_dit else None,
+                source_latents=z0_in,
             )
 
             v_uncond, v_text = pred_v.chunk(2)
             vc_uncond, vc_text = pred_vc.chunk(2)
             vs_uncond, vs_text = pred_vs.chunk(2)
 
-            # CFG on full velocity
-            pred_v = v_uncond + text_guidance_scale * (v_text - v_uncond)
 
-            # Optional: slightly more explicit style scaling at inference
-            pred_vc = vc_uncond + text_guidance_scale * (vc_text - vc_uncond)
+            pred_vc = vc_uncond
             pred_vs = vs_uncond + text_guidance_scale * (vs_text - vs_uncond)
-            pred_v = pred_vc + style_strength * pred_vs
+            pred_v = pred_vc + self.style_strength * pred_vs
 
             if recon_guidance_scale > 0:
                 with torch.enable_grad():
