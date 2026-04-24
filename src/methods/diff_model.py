@@ -31,6 +31,7 @@ class LatentDiffusionModel(nn.Module):
         vae_name: str = "runwayml/stable-diffusion-v1-5",
         unet_name: str = "runwayml/stable-diffusion-v1-5",
         text_name: str = "openai/clip-vit-large-patch14",
+        t5_name: str = "t5-base",
         freeze_vae: bool = False,
         freeze_text: bool = False,
         use_t5: bool = False,
@@ -84,8 +85,8 @@ class LatentDiffusionModel(nn.Module):
 
         # Text encoder + tokenizer
         if use_t5:
-            self.tokenizer = T5Tokenizer.from_pretrained(text_name)
-            self.text_encoder = T5EncoderModel.from_pretrained(text_name)
+            self.tokenizer = T5Tokenizer.from_pretrained(t5_name)
+            self.text_encoder = T5EncoderModel.from_pretrained(t5_name)
         else:
             self.tokenizer = CLIPTokenizer.from_pretrained(text_name)
             self.text_encoder = CLIPTextModel.from_pretrained(text_name)
@@ -142,25 +143,28 @@ class LatentDiffusionModel(nn.Module):
 
     # @torch.no_grad()
     def encode_prompt(self, prompts):
-        """
-        prompts: list[str]
-        returns encoder_hidden_states: [B, L, D]
-        """
+        max_length = getattr(self.tokenizer, "model_max_length", 77)
+
+        if max_length is None or max_length > 10000:
+            max_length = 512 if self.use_t5 else 77
+
         tokens = self.tokenizer(
             prompts,
             padding="max_length",
             truncation=True,
-            max_length=self.tokenizer.model_max_length,
+            max_length=max_length,
             return_tensors="pt",
         )
+
         device = next(self.parameters()).device
         input_ids = tokens.input_ids.to(device)
         attention_mask = tokens.attention_mask.to(device)
 
         text_outputs = self.text_encoder(
             input_ids=input_ids,
-            attention_mask=attention_mask
+            attention_mask=attention_mask,
         )
+
         return text_outputs.last_hidden_state, attention_mask
 
     def forward(self, source_images, target_images, prompts):

@@ -86,12 +86,13 @@ class TrainConfig:
     use_t5: bool = False
     use_dit: bool = False
     use_advanced_loss: bool = False
+    use_noise: bool = False
     t_scaler: float = 999.0
     style_strength: float = 1.0
     model_type: str = "diffusion"  # "diffusion" or "flow" or "decouple"
-    recon_loss_scale: float = 0.2
-    style_loss_scale: float = 0.2
-    ortho_loss_scale: float = 0.02
+    recon_loss_scale: float = 0.05
+    style_loss_scale: float = 0.05
+    ortho_loss_scale: float = 0.005
     run_name: str = "genAIteam"
 
 
@@ -216,7 +217,7 @@ def train(cfg: TrainConfig):
             elif cfg.model_type == "decouple":
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
                 if cfg.use_advanced_loss:
-                    alpha = 0.2
+                    alpha = min(0.2, global_step / (cfg.num_epochs * len(train_loader)))
                     recon_guidance = dino_loss(
                         pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
                         ref_images=batch["source_images"],
@@ -399,10 +400,12 @@ def parse_args():
     parser.add_argument("--style_strength", type=float, default=1.0)
     parser.add_argument("--model_type", type=str, default="diffusion", choices=["diffusion", "flow", "decouple"])
     parser.add_argument("--use_advanced_loss", action="store_true")
-    parser.add_argument("--recon_loss_scale", type=float, default=0.2)
-    parser.add_argument("--style_loss_scale", type=float, default=0.2)
-    parser.add_argument("--ortho_loss_scale", type=float, default=0.02)
+    parser.add_argument("--recon_loss_scale", type=float, default=0.05)
+    parser.add_argument("--style_loss_scale", type=float, default=0.05)
+    parser.add_argument("--ortho_loss_scale", type=float, default=0.005)
     parser.add_argument("--run_name", type=str, default="genAIteam", help="WandB project name")
+    parser.add_argument("--use_noise", action="store_true", help="Whether to add noise input to the decouple model")
+
 
     args = parser.parse_args()
 
@@ -437,6 +440,7 @@ def parse_args():
         style_loss_scale=args.style_loss_scale,
         ortho_loss_scale=args.ortho_loss_scale, 
         run_name=args.run_name,
+        use_noise=args.use_noise
     )
     return cfg
 
