@@ -92,6 +92,7 @@ class TrainConfig:
     recon_loss_scale: float = 0.2
     style_loss_scale: float = 0.2
     ortho_loss_scale: float = 0.02
+    run_name: str = "genAIteam"
 
 
 def get_dtype(mixed_precision: str):
@@ -117,16 +118,19 @@ def train(cfg: TrainConfig):
         wandb.init(
             entity="genAIteam",
             project="method1_diffusion", 
+            name=cfg.run_name,
             config=cfg.__dict__)
     elif cfg.model_type == "flow":
         wandb.init(
             entity="genAIteam",
             project="method2_flow", 
+            name=cfg.run_name,
             config=cfg.__dict__)
     elif cfg.model_type == "decouple":
         wandb.init(
             entity="genAIteam",
             project="method3_decouple", 
+            name=cfg.run_name,
             config=cfg.__dict__)
     else:
         raise ValueError(f"Unsupported model type: {cfg.model_type}")
@@ -398,6 +402,7 @@ def parse_args():
     parser.add_argument("--recon_loss_scale", type=float, default=0.2)
     parser.add_argument("--style_loss_scale", type=float, default=0.2)
     parser.add_argument("--ortho_loss_scale", type=float, default=0.02)
+    parser.add_argument("--run_name", type=str, default="genAIteam", help="WandB project name")
 
     args = parser.parse_args()
 
@@ -430,7 +435,8 @@ def parse_args():
         use_advanced_loss=args.use_advanced_loss,
         recon_loss_scale=args.recon_loss_scale,
         style_loss_scale=args.style_loss_scale,
-        ortho_loss_scale=args.ortho_loss_scale
+        ortho_loss_scale=args.ortho_loss_scale, 
+        run_name=args.run_name,
     )
     return cfg
 
