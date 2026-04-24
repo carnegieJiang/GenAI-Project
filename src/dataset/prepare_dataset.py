@@ -5,7 +5,7 @@ import os
 import random
 import shutil
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple 
 
 from prompts import build_prompt
 
@@ -42,13 +42,29 @@ def read_train_rows(train_csv_path: Path) -> List[Dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def sample_rows(rows: List[Dict[str, str]], max_samples: int, seed: int) -> List[Dict[str, str]]:
-    if len(rows) <= max_samples:
-        return rows
+def split_rows(
+    rows: List[Dict[str, str]],
+    test_ratio: float = 0.2,
+    seed: int = 42,
+    max_samples: int | None = None,
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
 
     rng = random.Random(seed)
-    indices = sorted(rng.sample(range(len(rows)), max_samples))
-    return [rows[index] for index in indices]
+
+    indices = list(range(len(rows)))
+    rng.shuffle(indices)
+
+    if max_samples is not None and len(indices) > max_samples:
+        indices = indices[:max_samples]
+
+    num_test = int(len(indices) * test_ratio)
+    test_indices = indices[:num_test]
+    train_indices = indices[num_test:]
+
+    train_rows = [rows[i] for i in train_indices]
+    test_rows = [rows[i] for i in test_indices]
+
+    return train_rows, test_rows
 
 
 def ensure_file(path: Path) -> None:
@@ -114,16 +130,16 @@ def build_metadata_rows(
     return metadata_rows
 
 
-def write_metadata(rows: List[Dict[str, str]], output_dir: Path) -> None:
+def write_metadata(rows: List[Dict[str, str]], output_dir: Path, filename: str = "metadata") -> None:
     fieldnames = ["id", "source_image_path", "target_image_path", "prompt", "style_label", "split"]
 
-    csv_path = output_dir / "metadata.csv"
+    csv_path = output_dir / "{}.csv".format(filename)
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 
-    json_path = output_dir / "metadata.json"
+    json_path = output_dir / "{}.json".format(filename)
     with json_path.open("w", encoding="utf-8") as handle:
         json.dump(rows, handle, indent=2)
 
@@ -137,18 +153,25 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     rows = read_train_rows(train_csv_path)
-    sampled_rows = sample_rows(rows=rows, max_samples=args.max_samples, seed=args.seed)
-    metadata_rows = build_metadata_rows(
-        sampled_rows=sampled_rows,
+    train_rows, test_rows = split_rows(rows=rows, max_samples=args.max_samples, seed=args.seed)
+    train_metadata_rows = build_metadata_rows(
+        sampled_rows=train_rows,
         dataset_root=dataset_root,
         output_dir=output_dir,
         copy_images=args.copy_images,
     )
-    write_metadata(rows=metadata_rows, output_dir=output_dir)
+    test_metadata_rows = build_metadata_rows(
+        sampled_rows=test_rows,
+        dataset_root=dataset_root,
+        output_dir=output_dir,
+        copy_images=args.copy_images,
+    )
+    write_metadata(rows=train_metadata_rows, output_dir=output_dir)
+    write_metadata(rows=test_metadata_rows, output_dir=output_dir, filename="metadata_test")
 
     print(f"Loaded {len(rows)} rows from {train_csv_path}")
-    print(f"Wrote {len(metadata_rows)} subset rows to {output_dir}")
-    print(f"Metadata files: {output_dir / 'metadata.csv'} and {output_dir / 'metadata.json'}")
+    print(f"Wrote {len(train_metadata_rows)} train rows to {output_dir}")
+    print(f"Wrote {len(test_metadata_rows)} test rows to {output_dir}")
     if args.copy_images:
         print("Sampled images were copied into the subset directory.")
     else:

@@ -1,18 +1,18 @@
 export MODEL_NAME="/home/ec2-user/GenAI-Project/model/baseline/instruct-pix2pix-diffusers"
-export DATA_DIR="/home/ec2-user/GenAI-Project/data/stylebooth_dataset"
+export DATA_DIR="/home/ec2-user/GenAI-Project/data/stylebooth_subset"
 export OUTPUT_DIR="/home/ec2-user/GenAI-Project/model/instructp2p"
 
 cd /home/ec2-user/GenAI-Project/src/baseline/diffusers/examples/instruct_pix2pix
 accelerate launch train_instruct_pix2pix.py \
   --pretrained_model_name_or_path=$MODEL_NAME \
   --train_data_dir=$DATA_DIR \
-  --original_image_column=input_image \
-  --edit_prompt_column=edit_prompt \
-  --edited_image_column=edited_image \
+  --original_image_column=source_image_path \
+  --edit_prompt_column=prompt \
+  --edited_image_column=target_image_path \
   --resolution=512 \
   --random_flip \
-  --train_batch_size=1 \
-  --gradient_accumulation_steps=4 \
+  --train_batch_size=4 \
+  --gradient_accumulation_steps=1 \
   --gradient_checkpointing \
   --use_8bit_adam \
   --enable_xformers_memory_efficient_attention \
