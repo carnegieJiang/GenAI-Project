@@ -12,7 +12,7 @@ python3 ./train.py \
     --sample_every_steps 50 \
     --num_sample_images 2 \
     --mixed_precision no \
-    --seed 42 --freeze_text_encoder --freeze_vae --model_type difffusion
+    --seed 42 --freeze_text_encoder --freeze_vae --model_type difffusion --run_name diffusion_unet_frozen
 
 python3 ./train.py \
     --data_path /home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv \
@@ -28,4 +28,4 @@ python3 ./train.py \
     --sample_every_steps 50 \
     --num_sample_images 2 \
     --mixed_precision no \
-    --seed 42 --freeze_text_encoder --freeze_vae --model_type flow
+    --seed 42 --freeze_text_encoder --freeze_vae --model_type flow --run_name flow_unet_frozen
