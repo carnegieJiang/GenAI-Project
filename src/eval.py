@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--metadata-path", default="/home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv")
     parser.add_argument("--output-dir", default="/home/ec2-user/GenAI-Project/results/diffusion_heat")
     parser.add_argument("--num-samples", type=int, default=8)
+    parser.add_argument("--split", default="test", choices=["train", "val", "test"], help="Metadata split to evaluate.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--steps", type=int, default=30)
@@ -102,7 +103,9 @@ def main() -> None:
         pipe.eval()
         
     grader = Grader()
-    rows = pick_samples(read_metadata(metadata_path), args.num_samples, args.seed)
+    all_rows = read_metadata(metadata_path)
+    split_rows = [row for row in all_rows if row.get("split", "train") == args.split]
+    rows = pick_samples(split_rows, args.num_samples, args.seed)
     results = []
 
     for index, row in enumerate(rows):
