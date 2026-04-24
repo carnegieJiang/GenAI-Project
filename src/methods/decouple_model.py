@@ -288,16 +288,23 @@ class LatentDecoupleModel(nn.Module):
                 source_latents = self.encode_image(source_images)
                 target_latents = self.encode_image(target_images)
                 prompt_embeds, attn_mask = self.encode_prompt(dropped_prompts)
+                uncon_prompt_embeds, uncon_attn_mask = self.encode_prompt([""] * batch_size)
         else:
             source_latents = self.encode_image(source_images)
             target_latents = self.encode_image(target_images)
             prompt_embeds, attn_mask = self.encode_prompt(dropped_prompts)
+            uncon_prompt_embeds, uncon_attn_mask = self.encode_prompt([""] * batch_size)
+
+        text_input = torch.cat([uncon_prompt_embeds, prompt_embeds], dim=0)
+        mask_input = torch.cat([uncon_attn_mask, attn_mask], dim=0)
 
         t = torch.rand(batch_size, device=device, dtype=source_latents.dtype)
-        t_b = t.view(batch_size, 1, 1, 1)
+        t = torch.cat([t, t], dim=0)
+        t_b = t.view(2*batch_size, 1, 1, 1)
 
-        z0 = source_latents
-        z1 = target_latents
+        z0 = torch.cat([source_latents, source_latents], dim=0)
+        z1 = torch.cat([target_latents, target_latents], dim=0)
+        
         zt = (1.0 - t_b) * z0 + t_b * z1
         target_velocity = z1 - z0
 
@@ -306,14 +313,17 @@ class LatentDecoupleModel(nn.Module):
 
         pred_velocity, pred_vc, pred_vs = self.predict_velocity_components(
             model_input=model_input,
-            source_latents=source_latents,
+            source_latents=z0,
             timesteps=time_input,
-            prompt_embeds=prompt_embeds,
-            attention_mask=attn_mask if self.use_dit else None,
+            prompt_embeds=text_input,
+            attention_mask=mask_input if self.use_dit else None,
         )
+        v_uncond, v_text = pred_velocity.chunk(2)
+        vc_uncond, vc_text = pred_vc.chunk(2)
+        vs_uncond, vs_text = pred_vs.chunk(2)
         
         
-        return {"pred_velocity": pred_velocity, "target_velocity": target_velocity, "style_velocity": pred_vs*self.style_strength, "content_velocity": pred_vc, "source_latents": z0}
+        return {"pred_velocity": v_text, "target_velocity": target_latents - source_latents, "style_velocity": vs_text*self.style_strength, "content_velocity": vc_uncond, "source_latents": source_latents}
 
 
     def compute_dino_recon_guidance(
@@ -346,6 +356,7 @@ class LatentDecoupleModel(nn.Module):
         text_guidance_scale=7.5,
         recon_guidance_scale=0.0,
         style_strength=None,
+        strength=0
     ):
         device = source_images.device
         batch_size = source_images.shape[0]
@@ -394,7 +405,7 @@ class LatentDecoupleModel(nn.Module):
 
             pred_vc = vc_uncond
             pred_vs = vs_uncond + text_guidance_scale * (vs_text - vs_uncond)
-            pred_v = pred_vc + self.style_strength * pred_vs
+            pred_v = pred_vc + style_strength * pred_vs
 
             if recon_guidance_scale > 0:
                 with torch.enable_grad():

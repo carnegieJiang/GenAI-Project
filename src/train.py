@@ -89,9 +89,9 @@ class TrainConfig:
     t_scaler: float = 999.0
     style_strength: float = 1.0
     model_type: str = "diffusion"  # "diffusion" or "flow" or "decouple"
-    recon_loss_scale: float = 1.0
-    style_loss_scale: float = 1.0
-    ortho_loss_scale: float = 0.1
+    recon_loss_scale: float = 0.2
+    style_loss_scale: float = 0.2
+    ortho_loss_scale: float = 0.02
 
 
 def get_dtype(mixed_precision: str):
@@ -212,18 +212,19 @@ def train(cfg: TrainConfig):
             elif cfg.model_type == "decouple":
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
                 if cfg.use_advanced_loss:
+                    alpha = 0.2
                     recon_guidance = dino_loss(
-                        pred_images=model.decode_latent(outputs["source_latents"] + outputs["content_velocity"]),
+                        pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
                         ref_images=batch["source_images"],
                     )
                     style_guidance = clip_loss(
-                        pred_images=model.decode_latent(outputs["source_latents"] + outputs["style_velocity"]),
+                        pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
                         prompts=batch["prompts"],
                     )
                     ortho_loss = orthogonality_loss(outputs["content_velocity"], outputs["style_velocity"])
-                    loss += cfg.recon_loss_scale * recon_guidance
-                    loss += cfg.style_loss_scale * style_guidance
-                    loss += cfg.ortho_loss_scale * ortho_loss
+                    loss += cfg.recon_loss_scale * recon_guidance / cfg.grad_accum_steps
+                    loss += cfg.style_loss_scale * style_guidance / cfg.grad_accum_steps
+                    loss += cfg.ortho_loss_scale * ortho_loss / cfg.grad_accum_steps
 
             running_loss += loss.item()
             smooth_loss += loss.item()
@@ -249,7 +250,7 @@ def train(cfg: TrainConfig):
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1
 
-                avg_loss = running_loss / cfg.grad_accum_steps
+                avg_loss = running_loss 
                 avg_smooth_loss = smooth_loss / global_step
                 running_loss = 0.0
                 wandb.log({"train_loss": avg_loss}, step=global_step)
@@ -394,9 +395,9 @@ def parse_args():
     parser.add_argument("--style_strength", type=float, default=1.0)
     parser.add_argument("--model_type", type=str, default="diffusion", choices=["diffusion", "flow", "decouple"])
     parser.add_argument("--use_advanced_loss", action="store_true")
-    parser.add_argument("--recon_loss_scale", type=float, default=1.0)
-    parser.add_argument("--style_loss_scale", type=float, default=1.0)
-    parser.add_argument("--ortho_loss_scale", type=float, default=0.1)
+    parser.add_argument("--recon_loss_scale", type=float, default=0.2)
+    parser.add_argument("--style_loss_scale", type=float, default=0.2)
+    parser.add_argument("--ortho_loss_scale", type=float, default=0.02)
 
     args = parser.parse_args()
 
