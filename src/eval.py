@@ -4,7 +4,7 @@ import random
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from diffusers import AutoencoderKL, UNet2DConditionModel, DDPMScheduler
+import json 
 
 import torch
 from diffusers import StableDiffusionInstructPix2PixPipeline
@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw
 from metrics.grader import Grader
 from methods.diff_model import LatentDiffusionModel
 from methods.flow_model import LatentFlowModel
+from methods.decouple_model import LatentDecoupleModel
 from torchvision import transforms
 
 
@@ -21,14 +22,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-dir", default="/home/ec2-user/GenAI-Project/model/diffusion_outputs/hptune_test/heat")
     parser.add_argument("--metadata-path", default="/home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv")
     parser.add_argument("--output-dir", default="/home/ec2-user/GenAI-Project/results/diffusion_heat")
-    parser.add_argument("--num-samples", type=int, default=8)
+    parser.add_argument("--num-samples", type=int, default=16)
     parser.add_argument("--split", default="test", choices=["train", "val", "test"], help="Metadata split to evaluate.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resolution", type=int, default=512)
     parser.add_argument("--steps", type=int, default=30)
-    parser.add_argument("--guidance-scale", type=float, default=7.5)
     parser.add_argument("--recon-guidance-scale", type=float, default=0.0)
     parser.add_argument("--image-guidance-scale", type=float, default=1.5)
+    parser.add_argument("--use_t5", action="store_true")
+    parser.add_argument("--use_dit", action="store_true")
+    parser.add_argument("--t_scaler", type=float, default=999.0)
+    parser.add_argument("--style_strength", type=float, default=1.0)
+    parser.add_argument("--use_noise", action="store_true", help="Whether to add noise input to the decouple model")
     return parser.parse_args()
 
 
@@ -76,11 +81,11 @@ def write_results(rows: List[Dict[str, str]], output_path: Path) -> None:
         writer.writerows(rows)
 
 
-def main() -> None:
+def main(guidance_scale: float) -> None:
     args = parse_args()
     metadata_path = Path(args.metadata_path)
     metadata_root = metadata_path.parent
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir + "/guidance_{}".format(guidance_scale))
     outputs_dir = output_dir / "outputs"
     grids_dir = output_dir / "grids"
     outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -94,19 +99,23 @@ def main() -> None:
         pipe = pipe.to(device)
         pipe.set_progress_bar_config(disable=True)
     elif args.model_id == "diffusion":
-        pipe = LatentDiffusionModel(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
+        pipe = LatentDiffusionModel(prompt_dropout_prob=0.0, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir, use_t5=args.use_t5, use_dit=args.use_dit) 
         pipe = pipe.to(device)
         pipe.eval()
     elif args.model_id == "flow":
-        pipe = LatentFlowModel(prompt_dropout_prob=0.1, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir) 
+        pipe = LatentFlowModel(prompt_dropout_prob=0.0, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir, use_t5=args.use_t5, use_dit=args.use_dit) 
+        pipe = pipe.to(device)
+        pipe.eval()
+    elif args.model_id == "decouple":
+        pipe = LatentDecoupleModel(prompt_dropout_prob=0.0, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir, use_t5=args.use_t5, use_dit=args.use_dit, use_noise=args.use_noise,  style_strength=args.style_strength) 
         pipe = pipe.to(device)
         pipe.eval()
         
-    grader = Grader()
     all_rows = read_metadata(metadata_path)
     split_rows = [row for row in all_rows if row.get("split", "train") == args.split]
     rows = pick_samples(split_rows, args.num_samples, args.seed)
     results = []
+    outputs = []
 
     for index, row in enumerate(rows):
         source_path = (metadata_root / row["source_image_path"]).resolve()
@@ -124,7 +133,7 @@ def main() -> None:
                 prompt=prompt,
                 image=source,
                 num_inference_steps=args.steps,
-                guidance_scale=args.guidance_scale,
+                guidance_scale=guidance_scale,
                 image_guidance_scale=args.image_guidance_scale,
             ).images[0]
             output = transforms.ToTensor()(output).unsqueeze(0).to(device)
@@ -133,7 +142,7 @@ def main() -> None:
                 source_images=source * 2.0 - 1.0,
                 prompts=[prompt],
                 num_inference_steps=args.steps,
-                text_guidance_scale=args.guidance_scale,
+                text_guidance_scale=guidance_scale,
                 recon_guidance_scale=args.recon_guidance_scale,
             )
             output = output.detach().cpu().clamp(-1, 1)
@@ -143,12 +152,29 @@ def main() -> None:
                 source_images=source * 2.0 - 1.0,
                 prompts=[prompt],
                 num_inference_steps=args.steps,
-                text_guidance_scale=args.guidance_scale,
+                text_guidance_scale=guidance_scale,
+                recon_guidance_scale=args.recon_guidance_scale,
+            )
+            output = output.detach().cpu().clamp(-1, 1)
+            output = (output + 1.0) / 2.0
+        elif args.model_id == "decouple":
+            output = pipe.sample(
+                source_images=source * 2.0 - 1.0,
+                prompts=[prompt],
+                num_inference_steps=args.steps,
+                text_guidance_scale=guidance_scale,
                 recon_guidance_scale=args.recon_guidance_scale,
             )
             output = output.detach().cpu().clamp(-1, 1)
             output = (output + 1.0) / 2.0
         elapsed = time.perf_counter() - start_time
+        outputs.append((source, output, target, prompt, elapsed, row))
+        sample_id = row.get("id") or f"sample_{index:03d}"
+        print(f"[{index + 1}/{len(rows)}] {sample_id}: {elapsed:.2f}s")
+        
+    pipe = pipe.to(torch.device("cpu"))
+    grader = Grader(device=device)
+    for index, (source, output, target, prompt, elapsed, row) in enumerate(outputs):
         report = grader.evaluate(source, output, target, prompt)
         source = transforms.ToPILImage()(source.squeeze(0).cpu())
         target = transforms.ToPILImage()(target.squeeze(0).cpu())
@@ -179,9 +205,8 @@ def main() -> None:
             }
         )
 
-        print(f"[{index + 1}/{len(rows)}] {sample_id}: {elapsed:.2f}s")
 
-    write_results(results, output_dir / "baseline_results.csv")
+    write_results(results, output_dir / "{}_results.csv".format(args.model_id))
 
     times = [float(row["seconds"]) for row in results]
     prompt_scores = [float(row["clip_text_similarity"]) for row in results if row["clip_text_similarity"]]
@@ -201,9 +226,14 @@ def main() -> None:
             "model_dir": args.model_dir,
         }
     ]
-    write_results(summary, output_dir / "baseline_summary.csv")
+    json_path = output_dir / "{}_summary.json".format(args.model_id)
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+    write_results(summary, output_dir / "{}_summary.csv".format(args.model_id))
     print(f"Saved results to {output_dir}")
+    grader = grader.to(torch.device("cpu"))
 
 
 if __name__ == "__main__":
-    main()
+    for guidance in [1.0, 1.5, 3.0, 5.0, 7.5]:
+        main(guidance)

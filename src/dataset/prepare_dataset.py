@@ -14,17 +14,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare a local StyleBooth subset for checkpoint 1.")
     parser.add_argument(
         "--dataset-root",
-        default="/home/chealisa/Desktop/genAI/stylebooth_dataset",
+        default="/home/ec2-user/GenAI-Project/data/stylebooth_dataset",
         help="Root directory of the extracted StyleBooth dataset.",
     )
     parser.add_argument(
         "--train-csv",
-        default="/home/chealisa/Desktop/genAI/stylebooth_dataset/train.csv",
+        default="/home/ec2-user/GenAI-Project/data/stylebooth_dataset/train.csv",
         help="Path to the StyleBooth train.csv file.",
     )
     parser.add_argument(
         "--output-dir",
-        default="/home/chealisa/Desktop/genAI/stylebooth_subset",
+        default="/home/ec2-user/GenAI-Project/data/stylebooth_subset",
         help="Directory where the subset metadata will be written.",
     )
     parser.add_argument("--max-samples", type=int, default=12000, help="Maximum number of rows to keep.")

@@ -8,9 +8,9 @@ import lpips
 
 
 class Grader:
-    def __init__(self, skip_fid=True):
+    def __init__(self, skip_fid=True, device=None):
         # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.device = torch.device("cpu")
+        self.device = torch.device("cpu") if device is None else device
 
         self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(self.device).eval()
         self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
@@ -47,16 +47,26 @@ class Grader:
 
     @torch.no_grad()
     def clip_image_features(self, images):
-        images = self._to_float_01(images).cpu()
-        inputs = self.clip_processor(images=list(images), return_tensors="pt")
-        pixel_values = inputs["pixel_values"].to(self.device)
+        x = self._to_float_01(images).to(self.device)
+        x = F.interpolate(x, size=(224, 224), mode="bilinear", align_corners=False)
 
-        vision_outputs = self.clip_model.vision_model(pixel_values=pixel_values)
+        clip_mean = torch.tensor(
+            [0.48145466, 0.4578275, 0.40821073],
+            device=self.device
+        ).view(1, 3, 1, 1)
+        clip_std = torch.tensor(
+            [0.26862954, 0.26130258, 0.27577711],
+            device=self.device
+        ).view(1, 3, 1, 1)
+
+        x = (x - clip_mean) / clip_std
+
+        vision_outputs = self.clip_model.vision_model(pixel_values=x)
         feats = vision_outputs.pooler_output
         feats = self.clip_model.visual_projection(feats)
         feats = F.normalize(feats, dim=-1)
         return feats
-
+    
     @torch.no_grad()
     def clip_text_features(self, texts):
         inputs = self.clip_processor(
@@ -137,6 +147,13 @@ class Grader:
         if not self.skip_fid:
             results["fid"] = self.compute_fid(target_images, output_images)
         return results
+
+    def to(self, device):
+        self.device = device
+        self.clip_model = self.clip_model.to(device)
+        self.dino_model = self.dino_model.to(device)
+        self.lpips_model = self.lpips_model.to(device)
+        return self
 
 
 if __name__ == "__main__":
