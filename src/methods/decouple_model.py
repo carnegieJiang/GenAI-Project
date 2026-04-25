@@ -517,9 +517,31 @@ class LatentDecoupleModel(nn.Module):
                 text_dim=768,
             )
         else:
-            raise NotImplementedError("UNet-based decouple model not implemented yet. Please use --use_dit for now.")
-            
+            base_unet = UNet2DConditionModel.from_pretrained(unet_name, subfolder="unet")
 
+            config = dict(base_unet.config)
+            config["in_channels"] = 8
+
+            self.style_unet = UNet2DConditionModel(**config)
+            self.content_unet = UNet2DConditionModel(**config)
+
+            # # load all compatible weights except conv_in.weight
+            # state_dict = base_unet.state_dict()
+            # old_conv_in_weight = state_dict.pop("conv_in.weight")
+            # old_conv_in_bias = state_dict.get("conv_in.bias", None)
+            
+            # missing, unexpected = self.unet.load_state_dict(state_dict, strict=False)
+            # print("Missing keys:", missing)
+            # print("Unexpected keys:", unexpected)
+
+            # # manually initialize new 8-channel conv_in
+            # with torch.no_grad():
+            #     self.unet.conv_in.weight.zero_()                     # [320, 8, 3, 3]
+            #     self.unet.conv_in.weight[:, :4, :, :] = old_conv_in_weight
+            #     # extra 4 channels stay zero
+
+            #     if old_conv_in_bias is not None:
+            #         self.unet.conv_in.bias.copy_(old_conv_in_bias)
         # Text encoder + tokenizer
         if use_t5:
             self.tokenizer = T5Tokenizer.from_pretrained(t5_name)
@@ -530,8 +552,6 @@ class LatentDecoupleModel(nn.Module):
             self.text_encoder = CLIPTextModel.from_pretrained(text_name) 
             text_dim = self.text_encoder.config.hidden_size
 
-        condition_dim = 32
-        # branch-specific side inputs
 
 
         if freeze_vae:
@@ -616,18 +636,30 @@ class LatentDecoupleModel(nn.Module):
         content_input = torch.cat([zt, z0], dim=1)
         style_input = torch.cat([zt, z0, noise], dim=1) if self.use_noise else torch.cat([zt, z0], dim=1)
         time_input = t * self.t_scaler
-        pred_vc = self.content_dit(
-            x=content_input,
-            timesteps=time_input,
-            prompt_embeds=uncon_prompt_embeds,
-            attention_mask=uncon_attn_mask,
-        )
-        pred_vs = self.style_dit(
-            x=style_input,
-            timesteps=time_input, 
-            prompt_embeds=prompt_embeds,
-            attention_mask=attn_mask,
-        )
+        if self.use_dit:
+            pred_vc = self.content_dit(
+                x=content_input,
+                timesteps=time_input,
+                prompt_embeds=uncon_prompt_embeds,
+                attention_mask=uncon_attn_mask,
+            )
+            pred_vs = self.style_dit(
+                x=style_input,
+                timesteps=time_input, 
+                prompt_embeds=prompt_embeds,
+                attention_mask=attn_mask,
+            )
+        else:
+            pred_vc = self.content_unet(
+                sample=content_input,
+                timestep=time_input,
+                encoder_hidden_states=uncon_prompt_embeds,
+            ).sample
+            pred_vs = self.style_unet(
+                sample=style_input,
+                timestep=time_input, 
+                encoder_hidden_states=prompt_embeds,
+            ).sample
         
         gate_input = torch.cat([zt, z0, pred_vs, pred_vc], dim=1)
         gate = torch.sigmoid(self.style_gate(gate_input))
@@ -708,19 +740,31 @@ class LatentDecoupleModel(nn.Module):
             content_input = torch.cat([z_in, z0_in], dim=1)
             style_input = torch.cat([z_in, z0_in, noise], dim=1) if self.use_noise else torch.cat([z_in, z0_in], dim=1)
             t_input = torch.cat([t, t], dim=0) * self.t_scaler
-
-            pred_vc = self.content_dit(
-                x=content_input,
-                timesteps=t_input,
-                prompt_embeds=content_embed,
-                attention_mask=content_mask,
-            )
-            pred_vs = self.style_dit(
-                x=style_input,
-                timesteps=t_input, 
-                prompt_embeds=style_embed,
-                attention_mask=style_mask,
-            )
+            
+            if self.use_dit:
+                pred_vc = self.content_dit(
+                    x=content_input,
+                    timesteps=t_input,
+                    prompt_embeds=content_embed,
+                    attention_mask=content_mask,
+                )
+                pred_vs = self.style_dit(
+                    x=style_input,
+                    timesteps=t_input, 
+                    prompt_embeds=style_embed,
+                    attention_mask=style_mask,
+                )
+            else:
+                pred_vc = self.content_unet(
+                    sample=content_input,
+                    timestep=t_input,
+                    encoder_hidden_states=content_embed,
+                ).sample
+                pred_vs = self.style_unet(
+                    sample=style_input,
+                    timestep=t_input, 
+                    encoder_hidden_states=style_embed,
+                ).sample
             
             vc_uncond, vc_text = pred_vc.chunk(2)
             vs_uncond, vs_text = pred_vs.chunk(2)

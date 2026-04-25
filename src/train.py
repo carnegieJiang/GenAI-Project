@@ -180,7 +180,8 @@ def train(cfg: TrainConfig):
             use_t5=cfg.use_t5,
             use_dit=cfg.use_dit,
             t_scaler=cfg.t_scaler,
-            style_strength=cfg.style_strength
+            style_strength=cfg.style_strength, 
+            use_noise=cfg.use_noise
         )
     else:
         raise ValueError(f"Unsupported model type: {cfg.model_type}")
@@ -270,6 +271,7 @@ def train(cfg: TrainConfig):
                         save_dir=sample_dir,
                         global_step=global_step,
                         max_images=cfg.num_sample_images,
+                        text_guidance_scale=cfg.text_guidance_scale,
                     )
 
             if (global_step+1) % cfg.save_every_steps == 0:
@@ -289,6 +291,7 @@ def train(cfg: TrainConfig):
             save_dir=sample_dir,
             global_step=global_step,
             max_images=cfg.num_sample_images,
+            text_guidance_scale=cfg.text_guidance_scale,
         )
 
     final_model_dir = os.path.join(cfg.output_dir)
@@ -304,6 +307,7 @@ def run_validation_samples(
     save_dir: str,
     global_step: int,
     max_images: int = 4,
+    text_guidance_scale: float = 7.5,
 ):
     was_training = model.training
     model.eval()
@@ -318,7 +322,7 @@ def run_validation_samples(
         prompts=prompts,
         num_inference_steps=30,
         strength=0.6,
-        text_guidance_scale=7.5,
+        text_guidance_scale=text_guidance_scale,
     )
 
     for i in range(edited.shape[0]):
