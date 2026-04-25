@@ -450,6 +450,48 @@ def prompt_dropout(prompts, drop=0.1):
             new_prompts.append(p)
     return new_prompts
 
+def load_flow_dit_into_decouple(dit, flow_ckpt_path, device="cpu"):
+    ckpt = torch.load(flow_ckpt_path, map_location=device)
+
+    # Handle both checkpoint formats:
+    # 1. {"model_state_dict": ...}
+    # 2. raw state_dict
+    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+        flow_state = ckpt["model_state_dict"]
+    else:
+        flow_state = ckpt
+
+    # Extract only flow_model.dit.* weights
+    dit_state = {}
+    for k, v in flow_state.items():
+        if k.startswith("dit."):
+            new_k = k[len("dit."):]  # remove "dit."
+            dit_state[new_k] = v
+
+    if len(dit_state) == 0:
+        raise ValueError(
+            "No keys starting with 'dit.' found in checkpoint. "
+            "Are you sure this is a trained LatentFlowModel with use_dit=True?"
+        )
+
+    missing_c, unexpected_c = dit.load_state_dict(
+        dit_state,
+        strict=False,
+    )
+    missing_s, unexpected_s = dit.load_state_dict(
+        dit_state,
+        strict=False,
+    )
+
+    print("Loaded flow DiT into content_dit")
+    print("content missing:", missing_c)
+    print("content unexpected:", unexpected_c)
+
+    print("Loaded flow DiT into style_dit")
+    print("style missing:", missing_s)
+    print("style unexpected:", unexpected_s)
+
+    return dit
 
 class LatentDecoupleModel(nn.Module):
 
@@ -468,6 +510,7 @@ class LatentDecoupleModel(nn.Module):
         t_scaler: float = 999.0, 
         style_strength: float = 1.0,
         use_noise: bool = False,
+        pretrained_dit_ckpt: str = None,
     ):
         super().__init__()
 
@@ -516,6 +559,10 @@ class LatentDecoupleModel(nn.Module):
                 mlp_ratio=4.0,
                 text_dim=768,
             )
+            if pretrained_dit_ckpt is not None:
+                print(f"Loading pretrained DiT weights from {pretrained_dit_ckpt} into decouple model...")
+                self.style_dit = load_flow_dit_into_decouple(self.style_dit, flow_ckpt_path=pretrained_dit_ckpt, device="cpu")
+                self.content_dit = load_flow_dit_into_decouple(self.content_dit, flow_ckpt_path=pretrained_dit_ckpt, device="cpu")
         else:
             base_unet = UNet2DConditionModel.from_pretrained(unet_name, subfolder="unet")
 
@@ -663,6 +710,7 @@ class LatentDecoupleModel(nn.Module):
         
         gate_input = torch.cat([zt, z0, pred_vs, pred_vc], dim=1)
         gate = torch.sigmoid(self.style_gate(gate_input))
+        gate = torch.clamp(gate, 0.1, 0.9)
         pred_v = pred_vc + self.style_strength * gate * pred_vs
         
         
@@ -773,7 +821,9 @@ class LatentDecoupleModel(nn.Module):
             gate_text_input = torch.cat([z, z_source, vs_text, vc_text], dim=1)
 
             gate_uncond = torch.sigmoid(self.style_gate(gate_uncond_input))
+            gate_uncond = torch.clamp(gate_uncond, 0.1, 0.9)
             gate_text = torch.sigmoid(self.style_gate(gate_text_input))
+            gate_text = torch.clamp(gate_text, 0.1, 0.9)
 
             v_uncond = vc_uncond + style_strength * gate_uncond * vs_uncond
             v_text = vc_text + style_strength * gate_text * vs_text

@@ -1,33 +1,80 @@
+
+# python3 ./eval.py \
+#     --model-id diffusion \
+#     --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+#     --model-dir /home/chealisa/Desktop/genAI/model/diffusion_outputs/hptune_test/frozen/final_model.pt \
+#     --output-dir /home/chealisa/Desktop/genAI/results/diffusion_dit \
+#     --resolution 512 \
+#     --num-samples 16 \
+#     --steps 30 \
+#     --seed 42 \
+#     --recon-guidance-scale 0.0 --use_dit
+
+# python3 ./eval.py \
+#     --model-id diffusion \
+#     --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+#     --model-dir /home/chealisa/Desktop/genAI/model/diffusion_outputs/hptune_test/frozen_t5/final_model.pt \
+#     --output-dir /home/chealisa/Desktop/genAI/results/diffusion_dit_t5 \
+#     --resolution 512 \
+#     --num-samples 16 \
+#     --steps 30 \
+#     --seed 42 \
+#     --recon-guidance-scale 0.0 --use_dit --use_t5
+
+
+
+# python3 ./eval.py \
+#     --model-id flow \
+#     --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+#     --model-dir /home/chealisa/Desktop/genAI/model/flow_outputs/hptune_test/frozen/final_model.pt \
+#     --output-dir /home/chealisa/Desktop/genAI/results/flow_dit \
+#     --resolution 512 \
+#     --num-samples 16 \
+#     --steps 30 \
+#     --seed 42 \
+#     --recon-guidance-scale 0.0 --use_dit
+
+# python3 ./eval.py \
+#     --model-id flow \
+#     --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+#     --model-dir /home/chealisa/Desktop/genAI/model/flow_outputs/hptune_test/frozen_t5/final_model.pt \
+#     --output-dir /home/chealisa/Desktop/genAI/results/flow_dit_t5 \
+#     --resolution 512 \
+#     --num-samples 16 \
+#     --steps 30 \
+#     --seed 42 \
+#     --recon-guidance-scale 0.0 --use_dit --use_t5
+
+
 python3 ./eval.py \
-    --model-id baseline \
-    --metadata-path /home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv \
-    --model-dir /home/ec2-user/GenAI-Project/model/instructp2p \
-    --output-dir /home/ec2-user/GenAI-Project/results/baseline \
+    --model-id decouple \
+    --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+    --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen/final_model.pt \
+    --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit \
     --resolution 512 \
     --num-samples 16 \
     --steps 30 \
     --seed 42 \
-    --recon-guidance-scale 0.0 
+    --recon-guidance-scale 0.0 --use_dit
 
 python3 ./eval.py \
-    --model-id diffusion \
-    --metadata-path /home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv \
-    --model-dir /home/ec2-user/GenAI-Project/model/diffusion_outputs/hptune_test/frozen/final_model.pt \
-    --output-dir /home/ec2-user/GenAI-Project/results/diffusion_unet \
+    --model-id decouple \
+    --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+    --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_t5/final_model.pt \
+    --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit_t5 \
     --resolution 512 \
     --num-samples 16 \
     --steps 30 \
     --seed 42 \
-    --recon-guidance-scale 0.0 
-
+    --recon-guidance-scale 0.0 --use_dit --use_t5
 
 python3 ./eval.py \
-    --model-id flow \
-    --metadata-path /home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv \
-    --model-dir /home/ec2-user/GenAI-Project/model/flow_outputs/hptune_test/frozen/final_model.pt \
-    --output-dir /home/ec2-user/GenAI-Project/results/flow_unet \
+    --model-id decouple \
+    --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+    --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_noise/final_model.pt \
+    --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit_noise \
     --resolution 512 \
     --num-samples 16 \
     --steps 30 \
     --seed 42 \
-    --recon-guidance-scale 0.0 
+    --recon-guidance-scale 0.0 --use_dit --use_noise

@@ -1,7 +1,6 @@
 import torch
 import torch.nn.functional as F
 from transformers import CLIPProcessor, CLIPModel
-from torchmetrics.image.fid import FrechetInceptionDistance
 import timm
 from torchvision import transforms
 import lpips
@@ -103,6 +102,7 @@ class Grader:
     def compute_fid(self, real_images, fake_images):
         real_images = (self._to_float_01(real_images) * 255).to(torch.uint8)
         fake_images = (self._to_float_01(fake_images) * 255).to(torch.uint8)
+        from torchmetrics.image.fid import FrechetInceptionDistance
 
         fid = FrechetInceptionDistance(feature=2048).to(self.device)
         fid.update(real_images.to(self.device), real=True)

@@ -92,8 +92,9 @@ class TrainConfig:
     model_type: str = "diffusion"  # "diffusion" or "flow" or "decouple"
     recon_loss_scale: float = 0.05
     style_loss_scale: float = 0.05
-    ortho_loss_scale: float = 0.005
+    ortho_loss_scale: float = 0.01
     run_name: str = "genAIteam"
+    pretrained_dit_ckpt: Optional[str] = None
 
 
 def get_dtype(mixed_precision: str):
@@ -181,7 +182,8 @@ def train(cfg: TrainConfig):
             use_dit=cfg.use_dit,
             t_scaler=cfg.t_scaler,
             style_strength=cfg.style_strength, 
-            use_noise=cfg.use_noise
+            use_noise=cfg.use_noise, 
+            pretrained_dit_ckpt=cfg.pretrained_dit_ckpt
         )
     else:
         raise ValueError(f"Unsupported model type: {cfg.model_type}")
@@ -217,6 +219,8 @@ def train(cfg: TrainConfig):
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
             elif cfg.model_type == "decouple":
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
+                ortho_loss = orthogonality_loss(outputs["content_velocity"], outputs["style_velocity"])
+                loss += cfg.ortho_loss_scale * ortho_loss / cfg.grad_accum_steps
                 if cfg.use_advanced_loss:
                     alpha = min(0.2, global_step / (cfg.num_epochs * len(train_loader)))
                     recon_guidance = dino_loss(
@@ -227,10 +231,8 @@ def train(cfg: TrainConfig):
                         pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
                         prompts=batch["prompts"],
                     )
-                    ortho_loss = orthogonality_loss(outputs["content_velocity"], outputs["style_velocity"])
                     loss += cfg.recon_loss_scale * recon_guidance / cfg.grad_accum_steps
                     loss += cfg.style_loss_scale * style_guidance / cfg.grad_accum_steps
-                    loss += cfg.ortho_loss_scale * ortho_loss / cfg.grad_accum_steps
 
             running_loss += loss.item()
             smooth_loss += loss.item()
@@ -409,6 +411,7 @@ def parse_args():
     parser.add_argument("--ortho_loss_scale", type=float, default=0.005)
     parser.add_argument("--run_name", type=str, default="genAIteam", help="WandB project name")
     parser.add_argument("--use_noise", action="store_true", help="Whether to add noise input to the decouple model")
+    parser.add_argument("--pretrained_dit_ckpt", type=str, default=None, help="Path to pretrained DIT checkpoint for initializing decouple model")
 
 
     args = parser.parse_args()
@@ -444,7 +447,8 @@ def parse_args():
         style_loss_scale=args.style_loss_scale,
         ortho_loss_scale=args.ortho_loss_scale, 
         run_name=args.run_name,
-        use_noise=args.use_noise
+        use_noise=args.use_noise, 
+        pretrained_dit_ckpt=args.pretrained_dit_ckpt
     )
     return cfg
 
