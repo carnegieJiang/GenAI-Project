@@ -82,7 +82,8 @@ def plot_metric_dots(
             group[metric],
             alpha=0.45,
         )
-
+    if metric == "avg_clip_source_output_similarity":
+        metric = "avg_clip_style_alignment"
     plt.xlabel("Guidance Scale")
     plt.ylabel(metric)
     plt.title(f"{metric} vs Guidance Scale")
