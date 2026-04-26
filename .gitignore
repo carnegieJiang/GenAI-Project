@@ -1,6 +1,8 @@
 /data 
 /model 
 /results
+/plots
+/tmp
 /src/wandb
 /src/baseline/diffusers
 /src/baseline/instruct-pix2pix
