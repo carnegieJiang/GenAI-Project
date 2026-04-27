@@ -229,24 +229,27 @@ def train(cfg: TrainConfig):
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
             elif cfg.model_type == "decouple":
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
-                ortho_loss = orthogonality_loss(outputs["content_velocity"], outputs["style_velocity"])
-                loss += cfg.ortho_loss_scale * ortho_loss / cfg.grad_accum_steps
-                pixel_loss = F.mse_loss(model.decode_latent(outputs["source_latents"] + 0.2 * outputs["style_velocity"]), batch["target_images"])
-                loss += 0.1 * pixel_loss / cfg.grad_accum_steps
-                # style_mag_loss = style_magnitude_loss(outputs["style_velocity"], outputs["content_velocity"], target_ratio=0.5)
-                # loss += 0.3 * style_mag_loss / cfg.grad_accum_steps
                 if cfg.use_advanced_loss:
                     alpha = 0.2
                     # recon_guidance = dino_loss(
                     #     pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
                     #     ref_images=batch["source_images"],
                     # )
-                    style_guidance = clip_loss(
+                    # loss += cfg.recon_loss_scale * recon_guidance / cfg.grad_accum_steps
+                    style_guidance = clip_loss.prompt_loss(
                         pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
                         prompts=batch["prompts"],
                     )
-                    # loss += cfg.recon_loss_scale * recon_guidance / cfg.grad_accum_steps
                     loss += cfg.style_loss_scale * style_guidance / cfg.grad_accum_steps
+                    
+                    ortho_loss = orthogonality_loss(outputs["content_velocity"], outputs["style_velocity"])
+                    loss += cfg.ortho_loss_scale * ortho_loss / cfg.grad_accum_steps
+                    
+                    pixel_loss = clip_loss.image_loss(model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]), batch["target_images"])
+                    loss += 0.1 * pixel_loss / cfg.grad_accum_steps
+                    
+                    style_mag_loss = style_magnitude_loss(outputs["style_velocity"], outputs["content_velocity"], target_ratio=0.2)
+                    loss += 0.1 * style_mag_loss / cfg.grad_accum_steps
                 
                 wandb.log({
                     "style_vs_content_norm_ratio": (

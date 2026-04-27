@@ -120,8 +120,29 @@ class CLIPStyleLoss(nn.Module):
         feats = F.normalize(feats, dim=-1)
         return feats
 
-    def forward(self, pred_images: torch.Tensor, prompts) -> torch.Tensor:
+    def prompt_loss(self, pred_images: torch.Tensor, prompts) -> torch.Tensor:
         feat_img = self.image_features(pred_images)
         with torch.no_grad():
             feat_txt = self.text_features(prompts)
         return 1.0 - (feat_img * feat_txt).sum(dim=-1).mean()
+
+    def image_loss(
+        self,
+        pred_images: torch.Tensor,
+        ref_images: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Args:
+            pred_images: generated/output images, shape [B, 3, H, W]
+            ref_images: reference/target images, shape [B, 3, H, W]
+            detach_ref: if True, no gradient through reference image features
+
+        Returns:
+            scalar CLIP image-image cosine distance
+        """
+        feat_pred = self.image_features(pred_images)
+
+        with torch.no_grad():
+            feat_ref = self.image_features(ref_images)
+
+        return 1.0 - (feat_pred * feat_ref).sum(dim=-1).mean()

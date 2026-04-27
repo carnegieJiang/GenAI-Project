@@ -147,8 +147,8 @@ class LatentDecoupleModel(nn.Module):
             if pretrained_dit_ckpt is not None:
                 print(f"Loading pretrained DiT weights from {pretrained_dit_ckpt} into decouple model...")
                 self.content_dit = load_flow_dit_into_decouple(self.content_dit, flow_ckpt_path=pretrained_dit_ckpt, device="cpu")
-                for p in self.content_dit.parameters():
-                    p.requires_grad = False
+                # for p in self.content_dit.parameters():
+                #     p.requires_grad = False
             if pretrained_dit_ckpt_for_style is not None:
                 print(f"Loading pretrained DiT weights for style from {pretrained_dit_ckpt_for_style} into decouple model...")
                 self.style_dit = load_flow_dit_into_decouple(self.style_dit, flow_ckpt_path=pretrained_dit_ckpt_for_style, device="cpu")
@@ -438,7 +438,7 @@ def get_opt_decouple(model, lr=1e-5, weight_decay=1e-2, scheduler_T_max=100):
     criterion = torch.nn.MSELoss()
     optimizer = torch.optim.AdamW([
     {"params": model.style_dit.parameters(), "lr": 1e-5},
-    # {"params": model.content_dit.parameters(), "lr": 2e-5},  # slower
+    {"params": model.content_dit.parameters(), "lr": 1e-6},  # slower
     # {"params": model.style_gate.parameters(), "lr": 1e-5},
 ])
     if scheduler_T_max > 0:

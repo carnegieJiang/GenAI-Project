@@ -147,7 +147,7 @@
 
 python3 ./train.py \
     --data_path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
-    --output_dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_content_improved_lpips \
+    --output_dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_content_improved_clip \
     --resolution 256 \
     --batch_size 1 \
     --lr 2.5e-6 \
@@ -160,5 +160,5 @@ python3 ./train.py \
     --num_sample_images 2 \
     --mixed_precision no \
     --text_guidance_scale 5.0 \
-    --seed 42 --freeze_text_encoder --freeze_vae --use_dit --model_type decouple --run_name decouple_dit_frozen_content_improved_lpips --pretrained_dit_ckpt /home/chealisa/Desktop/genAI/model/flow_outputs/hptune_test/frozen/final_model.pt --pretrained_dit_ckpt_for_style /home/chealisa/Desktop/genAI/model/flow_outputs/hptune_test/frozen/final_model.pt \
+    --seed 42 --freeze_text_encoder --freeze_vae --use_dit --model_type decouple --run_name decouple_dit_frozen_content_improved_clip --pretrained_dit_ckpt /home/chealisa/Desktop/genAI/model/flow_outputs/hptune_test/frozen/final_model.pt --pretrained_dit_ckpt_for_style /home/chealisa/Desktop/genAI/model/flow_outputs/hptune_test/frozen/final_model.pt \
     --ortho_loss_scale 0.05 --style_strength 1.0 --use_advanced_loss --style_loss_scale 0.5
