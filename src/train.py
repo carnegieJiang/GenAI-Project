@@ -17,7 +17,7 @@ from torchvision import transforms
 
 from methods.diff_model import LatentDiffusionModel, get_opt
 from methods.flow_model import LatentFlowModel
-from methods.decouple_model import LatentDecoupleModel
+from methods.decouple_model import LatentDecoupleModel, get_opt_decouple
 from methods.loss_model import DINOContentLoss, CLIPStyleLoss
 from dataset.dataset import make_dataloader
 import wandb 
@@ -86,7 +86,6 @@ class TrainConfig:
     use_t5: bool = False
     use_dit: bool = False
     use_advanced_loss: bool = False
-    use_noise: bool = False
     t_scaler: float = 999.0
     style_strength: float = 1.0
     model_type: str = "diffusion"  # "diffusion" or "flow" or "decouple"
@@ -95,6 +94,7 @@ class TrainConfig:
     ortho_loss_scale: float = 0.01
     run_name: str = "genAIteam"
     pretrained_dit_ckpt: Optional[str] = None
+    pretrained_dit_ckpt_for_style: Optional[str] = None
 
 
 def get_dtype(mixed_precision: str):
@@ -114,6 +114,16 @@ def orthogonality_loss(vc, vs, eps=1e-8):
     cosine = (vc_norm * vs_norm).sum(dim=1)
     return (cosine ** 2).mean()
 
+def style_magnitude_loss(vs, vc, target_ratio=0.5):
+    vs_norm = vs.flatten(1).norm(dim=1)
+    vc_norm = vc.flatten(1).norm(dim=1).detach()
+    
+    # Soft ratio penalty instead of hard hinge
+    # Penalize log(vc_norm / vs_norm) — smooth everywhere, zero when equal
+    ratio = vc_norm / (vs_norm + 1e-8)
+    # Only penalize when style is too small (ratio > 1/target_ratio)
+    threshold = 1.0 / target_ratio  # e.g. 2.0 for target_ratio=0.5
+    return F.relu(torch.log(ratio / threshold + 1e-8)).mean()
 
 def train(cfg: TrainConfig):
     if cfg.model_type == "diffusion":
@@ -182,14 +192,14 @@ def train(cfg: TrainConfig):
             use_dit=cfg.use_dit,
             t_scaler=cfg.t_scaler,
             style_strength=cfg.style_strength, 
-            use_noise=cfg.use_noise, 
-            pretrained_dit_ckpt=cfg.pretrained_dit_ckpt
+            pretrained_dit_ckpt=cfg.pretrained_dit_ckpt, 
+            pretrained_dit_ckpt_for_style=cfg.pretrained_dit_ckpt_for_style
         )
     else:
         raise ValueError(f"Unsupported model type: {cfg.model_type}")
     model.to(device)
-    criterion, optimizer, scheduler = get_opt(model, lr=cfg.lr, weight_decay=cfg.weight_decay, scheduler_T_max=-1)
-    dino_loss = DINOContentLoss().to(device) if cfg.model_type in ["decouple"] else None 
+    criterion, optimizer, scheduler = get_opt(model, lr=cfg.lr, weight_decay=cfg.weight_decay, scheduler_T_max=-1) if cfg.model_type in ["diffusion", "flow"] else get_opt_decouple(model, lr=cfg.lr, weight_decay=cfg.weight_decay, scheduler_T_max=-1)
+    # dino_loss = DINOContentLoss().to(device) if cfg.model_type in ["decouple"] else None 
     clip_loss = CLIPStyleLoss().to(device) if cfg.model_type in ["decouple"] else None
     global_step = 0
     use_amp = device.type == "cuda" and cfg.mixed_precision in ["fp16", "bf16"]
@@ -221,18 +231,33 @@ def train(cfg: TrainConfig):
                 loss = criterion(outputs["pred_velocity"], outputs["target_velocity"]) / cfg.grad_accum_steps
                 ortho_loss = orthogonality_loss(outputs["content_velocity"], outputs["style_velocity"])
                 loss += cfg.ortho_loss_scale * ortho_loss / cfg.grad_accum_steps
+                pixel_loss = F.mse_loss(model.decode_latent(outputs["source_latents"] + 0.2 * outputs["style_velocity"]), batch["target_images"])
+                loss += 0.1 * pixel_loss / cfg.grad_accum_steps
+                # style_mag_loss = style_magnitude_loss(outputs["style_velocity"], outputs["content_velocity"], target_ratio=0.5)
+                # loss += 0.3 * style_mag_loss / cfg.grad_accum_steps
                 if cfg.use_advanced_loss:
-                    alpha = min(0.2, global_step / (cfg.num_epochs * len(train_loader)))
-                    recon_guidance = dino_loss(
-                        pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
-                        ref_images=batch["source_images"],
-                    )
+                    alpha = 0.2
+                    # recon_guidance = dino_loss(
+                    #     pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
+                    #     ref_images=batch["source_images"],
+                    # )
                     style_guidance = clip_loss(
                         pred_images=model.decode_latent(outputs["source_latents"] + alpha * outputs["pred_velocity"]),
                         prompts=batch["prompts"],
                     )
-                    loss += cfg.recon_loss_scale * recon_guidance / cfg.grad_accum_steps
+                    # loss += cfg.recon_loss_scale * recon_guidance / cfg.grad_accum_steps
                     loss += cfg.style_loss_scale * style_guidance / cfg.grad_accum_steps
+                
+                wandb.log({
+                    "style_vs_content_norm_ratio": (
+                        outputs["style_velocity"].norm() / 
+                        (outputs["content_velocity"].norm() + 1e-8)
+                    ).item()
+                }, step=global_step)
+                wandb.log({
+                    "loss/flow": criterion(outputs["pred_velocity"], outputs["target_velocity"]).item(),
+                    "loss/ortho": ortho_loss.item(),
+                }, step=global_step)
 
             running_loss += loss.item()
             smooth_loss += loss.item()
@@ -408,10 +433,11 @@ def parse_args():
     parser.add_argument("--use_advanced_loss", action="store_true")
     parser.add_argument("--recon_loss_scale", type=float, default=0.05)
     parser.add_argument("--style_loss_scale", type=float, default=0.05)
-    parser.add_argument("--ortho_loss_scale", type=float, default=0.005)
+    parser.add_argument("--ortho_loss_scale", type=float, default=0.01)
     parser.add_argument("--run_name", type=str, default="genAIteam", help="WandB project name")
-    parser.add_argument("--use_noise", action="store_true", help="Whether to add noise input to the decouple model")
     parser.add_argument("--pretrained_dit_ckpt", type=str, default=None, help="Path to pretrained DIT checkpoint for initializing decouple model")
+    parser.add_argument("--pretrained_dit_ckpt_for_style", type=str, default=None, help="Path to pretrained DIT checkpoint for initializing style branch of decouple model")
+    
 
 
     args = parser.parse_args()
@@ -447,8 +473,8 @@ def parse_args():
         style_loss_scale=args.style_loss_scale,
         ortho_loss_scale=args.ortho_loss_scale, 
         run_name=args.run_name,
-        use_noise=args.use_noise, 
-        pretrained_dit_ckpt=args.pretrained_dit_ckpt
+        pretrained_dit_ckpt=args.pretrained_dit_ckpt, 
+        pretrained_dit_ckpt_for_style=args.pretrained_dit_ckpt_for_style
     )
     return cfg
 

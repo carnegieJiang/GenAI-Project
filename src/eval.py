@@ -33,7 +33,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_dit", action="store_true")
     parser.add_argument("--t_scaler", type=float, default=999.0)
     parser.add_argument("--style_strength", type=float, default=1.0)
-    parser.add_argument("--use_noise", action="store_true", help="Whether to add noise input to the decouple model")
     return parser.parse_args()
 
 
@@ -81,7 +80,7 @@ def write_results(rows: List[Dict[str, str]], output_path: Path) -> None:
         writer.writerows(rows)
 
 
-def main(guidance_scale: float) -> None:
+def main(guidance_scale: float, grader: Grader) -> None:
     args = parse_args()
     metadata_path = Path(args.metadata_path)
     metadata_root = metadata_path.parent
@@ -107,7 +106,7 @@ def main(guidance_scale: float) -> None:
         pipe = pipe.to(device)
         pipe.eval()
     elif args.model_id == "decouple":
-        pipe = LatentDecoupleModel(prompt_dropout_prob=0.0, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir, use_t5=args.use_t5, use_dit=args.use_dit, use_noise=args.use_noise,  style_strength=args.style_strength) 
+        pipe = LatentDecoupleModel(prompt_dropout_prob=0.0, freeze_vae=True, freeze_text=True, from_pretrained=args.model_dir, use_t5=args.use_t5, use_dit=args.use_dit,  style_strength=args.style_strength) 
         pipe = pipe.to(device)
         pipe.eval()
         
@@ -173,7 +172,7 @@ def main(guidance_scale: float) -> None:
         print(f"[{index + 1}/{len(rows)}] {sample_id}: {elapsed:.2f}s")
         
     pipe = pipe.to(torch.device("cpu"))
-    grader = Grader(device=device)
+    grader = grader.to(device)
     for index, (source, output, target, prompt, elapsed, row) in enumerate(outputs):
         report = grader.evaluate(source, output, target, prompt)
         source = transforms.ToPILImage()(source.squeeze(0).cpu())
@@ -235,5 +234,6 @@ def main(guidance_scale: float) -> None:
 
 
 if __name__ == "__main__":
+    grader = Grader()
     for guidance in [1.0, 1.5, 3.0, 5.0, 7.5]:
-        main(guidance)
+        main(guidance, grader)

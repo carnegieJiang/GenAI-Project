@@ -25,6 +25,15 @@ class Grader:
 
         self.dino_mean = torch.tensor([0.485, 0.456, 0.406], device=self.device).view(1, 3, 1, 1)
         self.dino_std = torch.tensor([0.229, 0.224, 0.225], device=self.device).view(1, 3, 1, 1)
+        self.clip_mean = torch.tensor(
+            [0.48145466, 0.4578275, 0.40821073],
+            device=self.device
+        ).view(1, 3, 1, 1)
+        self.clip_std = torch.tensor(
+            [0.26862954, 0.26130258, 0.27577711],
+            device=self.device
+        ).view(1, 3, 1, 1)
+
         self.skip_fid = skip_fid
 
     def _to_float_01(self, images: torch.Tensor) -> torch.Tensor:
@@ -49,16 +58,7 @@ class Grader:
         x = self._to_float_01(images).to(self.device)
         x = F.interpolate(x, size=(224, 224), mode="bilinear", align_corners=False)
 
-        clip_mean = torch.tensor(
-            [0.48145466, 0.4578275, 0.40821073],
-            device=self.device
-        ).view(1, 3, 1, 1)
-        clip_std = torch.tensor(
-            [0.26862954, 0.26130258, 0.27577711],
-            device=self.device
-        ).view(1, 3, 1, 1)
-
-        x = (x - clip_mean) / clip_std
+        x = (x - self.clip_mean) / self.clip_std
 
         vision_outputs = self.clip_model.vision_model(pixel_values=x)
         feats = vision_outputs.pooler_output
@@ -153,6 +153,10 @@ class Grader:
         self.clip_model = self.clip_model.to(device)
         self.dino_model = self.dino_model.to(device)
         self.lpips_model = self.lpips_model.to(device)
+        self.clip_mean = self.clip_mean.to(device)
+        self.clip_std = self.clip_std.to(device)
+        self.dino_mean = self.dino_mean.to(device)
+        self.dino_std = self.dino_std.to(device)
         return self
 
 

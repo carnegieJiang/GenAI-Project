@@ -46,35 +46,46 @@
 #     --recon-guidance-scale 0.0 --use_dit --use_t5
 
 
-python3 ./eval.py \
-    --model-id decouple \
-    --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
-    --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen/final_model.pt \
-    --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit \
-    --resolution 512 \
-    --num-samples 16 \
-    --steps 30 \
-    --seed 42 \
-    --recon-guidance-scale 0.0 --use_dit
+# python3 ./eval.py \
+#     --model-id decouple \
+#     --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+#     --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_no_pretrain/final_model.pt \
+#     --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit_no_pretrain \
+#     --resolution 512 \
+#     --num-samples 16 \
+#     --steps 30 \
+#     --seed 42 \
+#     --recon-guidance-scale 0.0 --use_dit
+
+# python3 ./eval.py \
+#     --model-id decouple \
+#     --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+#     --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_content_pretrained/final_model.pt \
+#     --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit_content_pretrained \
+#     --resolution 512 \
+#     --num-samples 16 \
+#     --steps 30 \
+#     --seed 42 \
+#     --recon-guidance-scale 0.0 --use_dit 
+
+# python3 ./eval.py \
+#     --model-id decouple \
+#     --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
+#     --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_both_pretrained/final_model.pt \
+#     --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit_both_pretrained \
+#     --resolution 512 \
+#     --num-samples 16 \
+#     --steps 30 \
+#     --seed 42 \
+#     --recon-guidance-scale 0.0 --use_dit
 
 python3 ./eval.py \
     --model-id decouple \
     --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
-    --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_t5/final_model.pt \
-    --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit_t5 \
+    --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_content_improved_lpips/final_model.pt \
+    --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit_content_improved_lpips \
     --resolution 512 \
     --num-samples 16 \
     --steps 30 \
     --seed 42 \
-    --recon-guidance-scale 0.0 --use_dit --use_t5
-
-python3 ./eval.py \
-    --model-id decouple \
-    --metadata-path /home/chealisa/Desktop/genAI/stylebooth_subset/metadata.csv \
-    --model-dir /home/chealisa/Desktop/genAI/model/decouple_outputs/hptune_test/frozen_noise/final_model.pt \
-    --output-dir /home/chealisa/Desktop/genAI/results/decouple_dit_noise \
-    --resolution 512 \
-    --num-samples 16 \
-    --steps 30 \
-    --seed 42 \
-    --recon-guidance-scale 0.0 --use_dit --use_noise
+    --recon-guidance-scale 0.0 --use_dit --style_strength 1.0 
