@@ -66,7 +66,7 @@ At inference (CFG on style branch only):
 ### 1. Clone the repository
 
 ```bash
-git clone [<your-repo-url>](https://github.com/carnegieJiang/GenAI-Project.git)
+git clone https://github.com/carnegieJiang/GenAI-Project.git
 cd GenAI-Project
 ```
 
