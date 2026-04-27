@@ -76,24 +76,6 @@ class LatentFlowModel(nn.Module):
 
             self.unet = UNet2DConditionModel(**config)
 
-            # # load all compatible weights except conv_in.weight
-            # state_dict = base_unet.state_dict()
-            # old_conv_in_weight = state_dict.pop("conv_in.weight")
-            # old_conv_in_bias = state_dict.get("conv_in.bias", None)
-
-            # missing, unexpected = self.unet.load_state_dict(state_dict, strict=False)
-            # print("Missing keys:", missing)
-            # print("Unexpected keys:", unexpected)
-
-            # # manually initialize new 8-channel conv_in
-            # with torch.no_grad():
-            #     self.unet.conv_in.weight.zero_()                     # [320, 8, 3, 3]
-            #     self.unet.conv_in.weight[:, :4, :, :] = old_conv_in_weight
-            #     # extra 4 channels stay zero
-
-            #     if old_conv_in_bias is not None:
-            #         self.unet.conv_in.bias.copy_(old_conv_in_bias)
-
         # Text encoder + tokenizer
         if use_t5:
             self.tokenizer = T5Tokenizer.from_pretrained(t5_name)

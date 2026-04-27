@@ -3,8 +3,8 @@
 /results
 /plots
 /tmp
-/src/wandb
-/src/baseline/diffusers
-/src/baseline/instruct-pix2pix
-/src/*/__pycache__
+/wandb
+/baseline/diffusers
+/baseline/instruct-pix2pix
+/*/__pycache__
 config.yml

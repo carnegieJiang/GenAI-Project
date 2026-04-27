@@ -4,10 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# ============================================================
-# Utilities
-# ============================================================
-
 def modulate(x, shift, scale):
     # x: [B, N, D]
     # shift, scale: [B, D]
@@ -38,10 +34,6 @@ def timestep_embedding(timesteps, dim, max_period=10000):
         emb = torch.cat([emb, torch.zeros_like(emb[:, :1])], dim=-1)
     return emb
 
-
-# ============================================================
-# Embedders
-# ============================================================
 
 class TimestepEmbedder(nn.Module):
     def __init__(self, frequency_embedding_size=256, hidden_size=768):
@@ -82,10 +74,6 @@ class PromptProjector(nn.Module):
         return self.proj(pooled)  # [B, hidden_size]
 
 
-# ============================================================
-# Patchify / Unpatchify
-# ============================================================
-
 class PatchEmbed(nn.Module):
     """
     Convert latent image [B, C, H, W] -> tokens [B, N, D]
@@ -124,10 +112,6 @@ def unpatchify(x, out_channels, patch_size, Hp, Wp):
     x = x.reshape(B, C, Hp * p, Wp * p)     # [B, C, H, W]
     return x
 
-
-# ============================================================
-# Core DiT block with AdaLN-Zero style modulation
-# ============================================================
 
 class MLP(nn.Module):
     def __init__(self, hidden_size, mlp_ratio=4.0):
@@ -197,10 +181,6 @@ class AdaLNDiTBlock(nn.Module):
         return x
 
 
-# ============================================================
-# Final projection layer
-# ============================================================
-
 class FinalLayer(nn.Module):
     def __init__(self, hidden_size, patch_size, out_channels):
         super().__init__()
@@ -223,10 +203,6 @@ class FinalLayer(nn.Module):
         x = self.linear(x)
         return x
 
-
-# ============================================================
-# Latent DiT
-# ============================================================
 
 class LatentDiT(nn.Module):
     """
