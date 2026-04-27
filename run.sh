@@ -1,0 +1,17 @@
+python3 ./train.py \
+    --data_path /home/ec2-user/GenAI-Project/data/stylebooth_subset/metadata.csv \
+    --output_dir /home/ec2-user/GenAI-Project/model/decouple_outputs/hptune_test/frozen_content_improved_clip \
+    --resolution 512 \
+    --batch_size 4 \
+    --lr 2.5e-6 \
+    --weight_decay 1e-2 \
+    --num_epochs 10 \
+    --grad_accum_steps 1 \
+    --max_grad_norm 1.0 \
+    --save_every_steps 10000 \
+    --sample_every_steps 50 \
+    --num_sample_images 2 \
+    --mixed_precision no \
+    --text_guidance_scale 5.0 \
+    --seed 42 --freeze_text_encoder --freeze_vae --use_dit --model_type decouple --run_name decouple_dit_frozen_content_improved_clip --pretrained_dit_ckpt /home/ec2-user/GenAI-Project/model/flow_outputs/hptune_test/frozen/final_model.pt --pretrained_dit_ckpt_for_style /home/ec2-user/GenAI-Project/model/flow_outputs/hptune_test/frozen/final_model.pt \
+    --ortho_loss_scale 0.05 --style_strength 1.0 --use_advanced_loss --style_loss_scale 0.5

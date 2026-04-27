@@ -1,2 +1,11 @@
 /data 
 /model 
+/results
+/plots
+/tmp
+/wandb
+/baseline/diffusers
+/baseline/instruct-pix2pix
+/*/__pycache__
+.vscode
+config.yml
